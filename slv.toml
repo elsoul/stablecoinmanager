@@ -1,0 +1,67 @@
+version = 1
+
+[service]
+name = "mcp-stablecoin-manager"
+kind = "cf-worker"
+repo = "vs2-app"
+path = "api/mcp/stablecoin-manager"
+
+[ci]
+workflow_name = "Deploy - CF MCP StableCoin Manager"
+workflow_file = ".github/workflows/cf-mcp-stablecoin-manager.yml"
+
+[ci.on.push]
+branches = ["main"]
+paths = [
+  "api/mcp/stablecoin-manager/**",
+  ".github/workflows/cf-mcp-stablecoin-manager.yml",
+]
+
+[build]
+tool = "pnpm"
+node_version = "24.14.1"
+pnpm_filter = "mcp-stablecoin-manager"
+deploy_script = "deploy:prod"
+install_args = "--frozen-lockfile"
+typecheck_script = "check"
+test_script = "test:deploy"
+
+[deploy]
+target = "cloudflare"
+
+[deploy.cloudflare]
+account_id_secret = "CLOUDFLARE_ACCOUNT_ID"
+api_token_secret = "CLOUDFLARE_API_TOKEN"
+
+# NO `[deploy.cloudflare.env_secrets]` BLOCK -- forced, not preferred.
+#
+# The plan called for JWT_SECRET / REFRESH_TOKEN_SECRET / OAUTH_STATE_SECRET to
+# be synced from GitHub. They cannot be: this repository is at GitHub's hard
+# limit of 100 Actions secrets, so creating another one returns HTTP 400
+# [measured 2026-09-21: `gh api repos/elsoul/vs2-app/actions/secrets` ->
+# total_count 100, page 2 empty, and reading an existing secret succeeds, so it
+# is the cap and not a permission]. Freeing a slot means deleting somebody
+# else's secret, which is not this thread's call.
+#
+# All five runtime secrets are therefore operator-set, once, with
+# `wrangler secret put`, exactly like WALLET_MNEMONIC and ERPC_API_KEY already
+# were: JWT_SECRET, REFRESH_TOKEN_SECRET, OAUTH_STATE_SECRET, ERPC_API_KEY,
+# WALLET_MNEMONIC. `wrangler deploy` preserves existing secrets, so CI
+# redeploys do not disturb them.
+#
+# The cost is that a fresh environment starts with none of them, which is why
+# src/lib/runtimeSecrets.ts refuses to serve OAuth and reports the gap on
+# /health instead of running with undefined keys.
+
+# NOTE: wrangler.toml is INTENTIONALLY hand-managed for this service and is NOT
+# generated from slv.toml, so NO `[wrangler]` block is declared here. The worker
+# owns the WalletLedger Durable Object bound via `[[migrations]] tag = "v1"`;
+# slv-toml-gen has no schema for `durable_objects` / `new_sqlite_classes`
+# (measured: 0 occurrences in .claude/skills/slv-toml-gen/**), so regenerating
+# would drop the migration tag and orphan the ledger. Precedent and identical
+# reasoning: api/erpc/x402-rpc-api/slv.toml.
+# Production invariants preserved by wrangler.toml (do not change):
+#   - worker name         : mcp-stablecoin-manager
+#   - custom domain route : mcp-stablecoin-manager.erpc.global
+#   - DO migration tags   : v1 (WalletLedger)
+#   - runtime secrets WALLET_MNEMONIC / ERPC_API_KEY stay CF-side only.

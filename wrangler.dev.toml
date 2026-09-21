@@ -1,0 +1,55 @@
+#:schema node_modules/wrangler/config-schema.json
+#
+# Local development. Every value here is a dummy: `assertProductionConfig`
+# refuses to deploy a wrangler.toml that looks like this one.
+#
+# The dev callback host is dev-mcp-stablecoin-manager.erpc.global -- a
+# subdomain we own, mapped to 127.0.0.1 via /etc/hosts, served by
+#   pnpm -F mcp-stablecoin-manager dev --local-protocol https --port 8787
+# Raw localhost/127.0.0.1 is deliberately NOT a registered redirect_uri on
+# auth-api, so an authorization code can never land on a host we do not own.
+name = "mcp-stablecoin-manager-dev"
+main = "./src/index.ts"
+compatibility_date = "2026-05-12"
+workers_dev = true
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NODE_ENV = "development"
+MCP_SERVER_BASE_URL = "https://dev-mcp-stablecoin-manager.erpc.global:8787"
+OAUTH_ISSUER = "https://dev-mcp-stablecoin-manager.erpc.global:8787"
+AUTH_API_BASE_URL = "https://auth-api.erpc.global"
+AUTH_API_CLIENT_ID = "mcp-stablecoin-manager"
+ALLOWED_GOOGLE_EMAILS = "f.kawasaki@elsoul.nl"
+JWT_EXPIRES_IN = "3600"
+JWT_SECRET = "dummy-jwt-secret-local-only"
+REFRESH_TOKEN_SECRET = "dummy-refresh-secret-local-only"
+OAUTH_STATE_SECRET = "dummy-state-secret-local-only"
+POLICY_MAX_EURC_PER_PAYMENT = "50"
+POLICY_MAX_EURC_PER_DAY = "200"
+POLICY_ALLOWED_NETWORKS = "eip155:8453,solana-mainnet"
+POLICY_ALLOWED_ASSETS = "EURC,USDC"
+POLICY_ALLOW_ANY_PAYTO = "false"
+POLICY_MAX_SLIPPAGE_BPS = "50"
+POLICY_MAX_DEADLINE_SECONDS = "600"
+
+[[kv_namespaces]]
+binding = "MCP_KV"
+id = "PLACEHOLDER_KV_ID"
+preview_id = "PLACEHOLDER_KV_PREVIEW_ID"
+
+[[durable_objects.bindings]]
+name = "WALLET_LEDGER"
+class_name = "WalletLedger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WalletLedger"]
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1

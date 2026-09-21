@@ -1,0 +1,65 @@
+# HAND-MANAGED. This file is NOT generated from slv.toml.
+#
+# The worker owns a Durable Object (WalletLedger) bound via `[[migrations]]`.
+# slv-toml-gen has no schema for `durable_objects` / `new_sqlite_classes`
+# (measured: 0 occurrences anywhere in .claude/skills/slv-toml-gen/**), so a
+# regenerated wrangler.toml would silently drop the migration tag and orphan
+# the ledger. Same precedent and reasoning as api/erpc/x402-rpc-api.
+#
+# Production invariants (do not change):
+#   - worker name   : mcp-stablecoin-manager
+#   - custom domain : mcp-stablecoin-manager.erpc.global
+#   - migration tags: v1 (WalletLedger) -- tags are cumulative, never rewritten
+#   - WALLET_MNEMONIC and ERPC_API_KEY are `wrangler secret` only. They are
+#     deliberately absent from slv.toml's env_secrets so CI never carries them.
+#     `wrangler deploy` preserves existing secrets.
+# 2026-05-12: the same date api/erpc/x402-rpc-api runs its SQLite Durable
+# Object on, and within what the pinned wrangler's local workerd supports,
+# so `wrangler dev --local` actually boots this worker.
+name = "mcp-stablecoin-manager"
+main = "./src/index.ts"
+compatibility_date = "2026-05-12"
+workers_dev = false
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+NODE_ENV = "production"
+MCP_SERVER_BASE_URL = "https://mcp-stablecoin-manager.erpc.global"
+OAUTH_ISSUER = "https://mcp-stablecoin-manager.erpc.global"
+AUTH_API_BASE_URL = "https://auth-api.erpc.global"
+AUTH_API_CLIENT_ID = "mcp-stablecoin-manager"
+ALLOWED_GOOGLE_EMAILS = "f.kawasaki@elsoul.nl"
+JWT_EXPIRES_IN = "3600"
+# Policy ceilings. Overridable per deploy here, and at runtime by `policy_set`
+# (which writes to the Durable Object ledger and leaves an audit row).
+POLICY_MAX_EURC_PER_PAYMENT = "50"
+POLICY_MAX_EURC_PER_DAY = "200"
+POLICY_ALLOWED_NETWORKS = "eip155:8453,solana-mainnet"
+POLICY_ALLOWED_ASSETS = "EURC,USDC"
+POLICY_ALLOW_ANY_PAYTO = "false"
+POLICY_MAX_SLIPPAGE_BPS = "50"
+POLICY_MAX_DEADLINE_SECONDS = "600"
+
+[[routes]]
+pattern = "mcp-stablecoin-manager.erpc.global"
+custom_domain = true
+
+[[kv_namespaces]]
+binding = "MCP_KV"
+id = "ad68f65964514401871ce3ba1d3bab66"
+
+[[durable_objects.bindings]]
+name = "WALLET_LEDGER"
+class_name = "WalletLedger"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["WalletLedger"]
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+head_sampling_rate = 1
