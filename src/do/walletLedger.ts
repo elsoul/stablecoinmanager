@@ -13,6 +13,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { Env } from '@/types/env'
 import { throttleIsLive } from '@/lib/throttle'
+import { reserveDecision, type ReserveOutcome } from '@/lib/reserve'
 
 export interface AuditRow {
   id: number
@@ -87,6 +88,124 @@ export class WalletLedger extends DurableObject<Env> {
     `)
   }
 
+  /**
+   * Check the daily ceiling and reserve the payment, in ONE method.
+   *
+   * 🔴 THIS METHOD MUST NOT CONTAIN AN `await`, for the same reason
+   * claimExportThrottle must not: Durable Objects serialise METHOD CALLS, not
+   * the span across an `await`. Reading today's total in one call and
+   * inserting in another lets two payments interleave between them, and both
+   * pass a ceiling that only one of them fits under. `sql.exec` is
+   * synchronous, so nothing suspends here.
+   *
+   * The row is written as `pending` BEFORE anything is signed. A signature
+   * that exists with no row is a payment the ledger does not know it made;
+   * a row with no signature is a reservation we can reconcile or expire.
+   * Of the two, only the first loses money.
+   */
+  async reservePayment(input: {
+    idempotencyKey: string
+    network: string
+    asset: string
+    amountAtomic: string
+    amountEurc: number
+    payTo: string
+    resource?: string
+    dailyCeilingEurc: number
+    now?: number
+  }): Promise<ReserveOutcome> {
+    const now = input.now ?? Date.now()
+    const sql = this.ctx.storage.sql
+
+    const existing = sql
+      .exec(
+        `SELECT * FROM payments WHERE idempotency_key = ?`,
+        input.idempotencyKey,
+      )
+      .toArray()
+
+    const startOfDay = Date.UTC(
+      new Date(now).getUTCFullYear(),
+      new Date(now).getUTCMonth(),
+      new Date(now).getUTCDate(),
+    )
+    // `stuck` counts. It is written when the payment was signed and submitted
+    // but the grant did not complete, so the money has most likely MOVED --
+    // excluding it would let repeated stuck payments spend past the ceiling
+    // without limit, which is the ceiling failing open in the one case where
+    // something has already gone wrong. `failed` is excluded because it is
+    // only written on paths where nothing was signed, or where the resource
+    // answered without a transaction hash.
+    const spentRows = sql
+      .exec<{ total: number | null }>(
+        `SELECT SUM(amount_eurc) AS total FROM payments
+          WHERE created_at >= ? AND status IN ('settled', 'pending', 'stuck')`,
+        startOfDay,
+      )
+      .toArray()
+
+    const decision = reserveDecision({
+      existing: existing[0],
+      spentTodayEurc: spentRows[0]?.total ?? 0,
+      amountEurc: input.amountEurc,
+      dailyCeilingEurc: input.dailyCeilingEurc,
+    })
+    if (decision.kind !== 'reserve') return decision
+
+    sql.exec(
+      `INSERT INTO payments (
+         idempotency_key, status, network, asset, amount_atomic, amount_eurc,
+         pay_to, resource, created_at, updated_at
+       ) VALUES (?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      input.idempotencyKey,
+      input.network,
+      input.asset,
+      input.amountAtomic,
+      input.amountEurc,
+      input.payTo,
+      input.resource ?? null,
+      now,
+      now,
+    )
+    return decision
+  }
+
+  /**
+   * Record the outcome of a reserved payment.
+   *
+   * 🔴 `settled` is TERMINAL and is never overwritten. erpc_topup polls after
+   * paying and settles again with whatever the poll returned, and the failure
+   * path tells the caller to poll again -- so a late or repeated poll can
+   * arrive after a grant has already landed. Letting it write `pending` over
+   * `settled` would turn a completed purchase back into an open one in the
+   * receipt the operator reads, while the money is long gone.
+   *
+   * No money is lost either way, which is exactly why it is worth guarding:
+   * the damage is to the record, and a wrong record is what someone acts on
+   * (steiner N-1 / gilgamesh N4, #14018).
+   */
+  async settlePayment(input: {
+    idempotencyKey: string
+    // `pending` is a legitimate terminal-for-now state: the resource accepted
+    // the payment (202) but has not granted yet, and erpc_topup polls for it.
+    status: 'settled' | 'pending' | 'failed' | 'stuck'
+    txHash?: string
+    invoiceNumber?: string
+    now?: number
+  }): Promise<void> {
+    this.ctx.storage.sql.exec(
+      `UPDATE payments
+          SET status = ?, tx_hash = COALESCE(?, tx_hash),
+              invoice_number = COALESCE(?, invoice_number), updated_at = ?
+        WHERE idempotency_key = ? AND status != 'settled'`,
+      input.status,
+      input.txHash ?? null,
+      input.invoiceNumber ?? null,
+      input.now ?? Date.now(),
+      input.idempotencyKey,
+    )
+  }
+
   /** EURC-equivalent settled today (UTC), for the daily policy ceiling. */
   async spentTodayEurc(now = Date.now()): Promise<number> {
     const startOfDay = Date.UTC(
@@ -97,7 +216,7 @@ export class WalletLedger extends DurableObject<Env> {
     const rows = this.ctx.storage.sql
       .exec<{ total: number | null }>(
         `SELECT SUM(amount_eurc) AS total FROM payments
-          WHERE created_at >= ? AND status IN ('settled', 'pending')`,
+          WHERE created_at >= ? AND status IN ('settled', 'pending', 'stuck')`,
         startOfDay,
       )
       .toArray()

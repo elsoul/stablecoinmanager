@@ -6,6 +6,10 @@ import { advertisedTools, findTool } from './toolsList'
 import { walletStatus } from './tools/walletStatus'
 import { holdings } from './tools/holdings'
 import { walletExportSeed } from './tools/walletExportSeed'
+import { x402Inspect, type InspectArgs } from './tools/x402Inspect'
+import { x402Pay, type PayArgs } from './tools/x402Pay'
+import { erpcTopup, type TopupArgs } from './tools/erpcTopup'
+import { history, policyGet, receipt } from './tools/ledgerReads'
 import { fail } from './result'
 
 export const mcpRouter = new Hono<AppContext>()
@@ -132,6 +136,20 @@ async function callTool(
         return text(redact(await walletStatus(env), held))
       case 'holdings':
         return text(redact(await holdings(env, input as { networks?: string[] }), held))
+      case 'x402_inspect':
+        return text(redact(await x402Inspect(env, input as unknown as InspectArgs), held))
+      case 'x402_pay':
+        return text(redact(await x402Pay(env, input as unknown as PayArgs), held))
+      case 'erpc_topup':
+        return text(redact(await erpcTopup(env, input as unknown as TopupArgs), held))
+      case 'history':
+        return text(redact(await history(env, input as { limit?: number }), held))
+      case 'receipt':
+        return text(
+          redact(await receipt(env, input as { idempotencyKey: string }), held),
+        )
+      case 'policy_get':
+        return text(redact(await policyGet(env), held))
       case 'wallet_export_seed':
         // Deliberately NOT redacted: this result is the secret. See the tool.
         return text(await walletExportSeed(env, input as { confirm?: string }, actor))

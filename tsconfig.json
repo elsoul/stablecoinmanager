@@ -18,7 +18,8 @@
     "lib": ["esnext"],
     "sourceMap": true,
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@constants/*": ["../../../constants/*"]
     }
   },
   "compileOnSave": true,

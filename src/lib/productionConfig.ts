@@ -62,6 +62,15 @@ export const assertDeployableProductionConfig = (raw: string): void => {
     )
   }
 
+  // The x402 host decides where real money is sent. A staging host in
+  // production would sign a payment to somewhere that is not ERPC.
+  const x402Host = config.match(/X402_HOST\s*=\s*"([^"]*)"/)?.[1]?.trim() ?? ''
+  if (x402Host !== 'https://x402.erpc.global') {
+    throw new Error(
+      `X402_HOST is ${JSON.stringify(x402Host)}; production must pay https://x402.erpc.global`,
+    )
+  }
+
   if (/NODE_ENV\s*=\s*"development"/.test(config)) {
     throw new Error('development NODE_ENV is present in the production config')
   }

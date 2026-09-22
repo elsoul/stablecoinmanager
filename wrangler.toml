@@ -30,8 +30,14 @@ AUTH_API_BASE_URL = "https://auth-api.erpc.global"
 AUTH_API_CLIENT_ID = "mcp-stablecoin-manager"
 ALLOWED_GOOGLE_EMAILS = "f.kawasaki@elsoul.nl"
 JWT_EXPIRES_IN = "3600"
-# Policy ceilings. Overridable per deploy here, and at runtime by `policy_set`
-# (which writes to the Durable Object ledger and leaves an audit row).
+X402_HOST = "https://x402.erpc.global"
+# Policy ceilings. Set here, per deploy, and these values are what applies.
+#
+# There is no runtime override yet. The ledger HAS a `policy_overrides` table
+# and `policy_get` reports its rows, but `loadPolicy` does not read them and
+# no tool writes them -- both halves are PR-3. Until then, changing a ceiling
+# means editing this file and redeploying, which writes nothing to the Durable
+# Object and leaves no audit row: the record of the change is the commit.
 POLICY_MAX_EURC_PER_PAYMENT = "50"
 POLICY_MAX_EURC_PER_DAY = "200"
 POLICY_ALLOWED_NETWORKS = "eip155:8453,solana-mainnet"

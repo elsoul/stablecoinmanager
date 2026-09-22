@@ -22,6 +22,13 @@ export type Env = {
   /** Comma-separated. A login outside this list is refused with 403. */
   ALLOWED_GOOGLE_EMAILS: string
 
+  /**
+   * The x402 resource server for ERPC credit. A var rather than a constant so
+   * a dev deployment can point at a staging host without a code change; the
+   * production value is pinned in wrangler.toml and asserted at deploy time.
+   */
+  X402_HOST?: string
+
   // Wallet + chain access. Both are `wrangler secret` only and are absent in
   // local dev, where the worker reports `not_initialized` instead of guessing.
   WALLET_MNEMONIC?: string

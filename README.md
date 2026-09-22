@@ -16,13 +16,26 @@ Unlimited RPC plan — except the wallet is no longer on somebody's laptop.
 
 **Single owner by construction: one deployment = one wallet = one human.**
 
+## What has and has not been exercised
+
+**Nothing in this worker has moved real money.** The payment path is argued
+from the one client that has -- `api/erpc/x402-rpc-api/.e2e-local/
+run-e2e-topup.mjs` -- and verified by tests that execute the SDK, not by a
+live settlement. The plan's canary is blocked on funding the wallet, and until
+it runs, every claim here about paying is a claim about code, not about an
+outcome.
+
+This lives in the README rather than only in a PR description because a PR
+description does not land on main: this repository squashes with
+`COMMIT_MESSAGES`, so the body is not what a future reader finds.
+
 ## What ships where
 
 | PR | Surface |
 |---|---|
 | PR-0 | `deno/api/auth-api` seeded OAuth client (merged separately) |
-| **PR-1 (this)** | scaffold, OAuth 2.1 AS, Google login via auth-api, wallet derivation, `wallet_status` / `holdings` / `wallet_export_seed`, `WalletLedger` DO schema |
-| PR-2 | `x402_inspect` / `x402_pay` / `erpc_topup` / `history` / `receipt` / `policy_get` |
+| PR-1 | scaffold, OAuth 2.1 AS, Google login via auth-api, wallet derivation, `wallet_status` / `holdings` / `wallet_export_seed`, `WalletLedger` DO schema |
+| **PR-2 (this)** | `x402_inspect` / `x402_pay` / `erpc_topup` / `history` / `receipt` / `policy_get` |
 | PR-3 | `plan` / `swap` / `bridge` / `policy_set` |
 
 Plan and acceptance criteria: `docs/superpowers/plans/2026-09-21-stablecoin-manager-mcp.md`.
@@ -149,8 +162,9 @@ public BIP-44 EVM vectors.
 ## Safety valve: ceilings, not prompts
 
 The point of this worker is to pay without asking a human first, so the brake
-is a ceiling rather than an approval dialog. Defaults (`POLICY_*` vars,
-overridable at runtime by `policy_set` with an audit row):
+is a ceiling rather than an approval dialog. Defaults, set by `POLICY_*` vars and read back with `policy_get`. Changing
+them today means editing the vars and redeploying -- the `policy_set` tool that
+writes a runtime override with an audit row is PR-3 and does **not** exist yet:
 
 | | |
 |---|---|
@@ -164,6 +178,34 @@ overridable at runtime by `policy_set` with an audit row):
 
 Over-limit requests are **refused, never clamped** — quietly paying less than
 asked is its own wrong answer.
+
+### What a payment row means, and what the daily ceiling counts
+
+A payment is written to the ledger as `pending` **before anything is signed**,
+because a signature with no row is a payment the worker does not know it made,
+while a row with no signature can be reconciled. Every exit after that point
+resolves the row, including the one that throws.
+
+| status | written when | counts toward the daily ceiling |
+|---|---|---|
+| `pending` | reserved, or paid and the grant has not landed yet | yes |
+| `settled` | the resource granted | yes |
+| `stuck` | signed and sent, outcome unknown -- the response was lost, the resource reported stuck, or it answered with an error **and a transaction hash** | **yes** |
+| `failed` | nothing was signed, or the resource answered with no transaction hash at all | no |
+
+The line between the last two is **the transaction hash, not the status
+code**. A hash coming back is evidence a transaction exists, whatever the
+status says about it, so a 500 carrying a hash is `stuck`. Counting it is
+deliberate: `stuck` is written exactly when the money has most likely moved
+and the worker cannot confirm it, so excluding it would let repeated stuck
+payments spend past the ceiling -- the ceiling failing open in the one case
+where something has already gone wrong. `failed` is excluded because it is
+only written where nothing reached the chain.
+
+Retrying is safe: `idempotencyKey` is required on every money tool and is the
+primary key of the row. A repeat call returns the first receipt **without
+signing again**, even if the ceiling has since been reached -- refusing a
+replay would make an already-paid call look unpaid.
 
 ## Chain access
 
@@ -291,6 +333,20 @@ npx wrangler kv namespace delete --namespace-id ad68f65964514401871ce3ba1d3bab66
 
 `wrangler delete` destroys the Durable Object's storage, which is the ledger:
 every payment, receipt and audit row goes with it. Export what you need first.
+
+### 🔴 Exporting puts the phrase in the client's transcript
+
+`wallet_export_seed` returns the recovery phrase to whatever MCP client asked
+for it. That client keeps a conversation history, and most of them sync it.
+The phrase is therefore in at least two places the moment it is exported: your
+offline backup, and the transcript.
+
+Treat the export as a one-time event with a known blast radius. Take the
+backup, then clear or delete that conversation. If the client syncs history to
+a service, assume the phrase reached that service and plan accordingly --
+rotating the wallet means generating a new one and moving the funds, because
+`wrangler secret` cannot show you what is stored and a phrase that leaked
+cannot be un-leaked.
 
 ## If `wallet_export_seed` refuses forever
 

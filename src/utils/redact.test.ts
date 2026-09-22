@@ -135,7 +135,13 @@ test('SOURCE: every tool return path is wrapped in redact, except the seed expor
     'utf8',
   )
   const returns = router.match(/return text\(\s*[\s\S]*?\n/g) ?? []
-  assert.ok(returns.length >= 4, 'expected several tool return paths')
+  // Exact, not `>= 4`. The unwrapped-count assertion below reddens if the
+  // extractor drops the seed-export path, but it stays green if the extractor
+  // drops any of the OTHER twelve -- and then this test would be reporting
+  // success over a shrinking population. 13 = 9 tools + unknown-tool +
+  // invalid-arguments + the exhaustiveness arm + the catch. Adding a return
+  // path is meant to be read here, not absorbed.
+  assert.equal(returns.length, 13, 'every return path in the router was found')
 
   const unwrapped = returns.filter((snippet) => !snippet.includes('redact('))
   // Exactly one: walletExportSeed, whose whole purpose is the secret.

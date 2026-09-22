@@ -11,6 +11,7 @@ import {
 import type { Env } from '@/types/env'
 
 const POLICY: Policy = {
+  allowedPayTo: ERPC_TREASURY_BASE,
   maxEurcPerPayment: 50,
   maxEurcPerDay: 200,
   allowedNetworks: ['eip155:8453', 'solana-mainnet'],

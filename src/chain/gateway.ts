@@ -17,6 +17,7 @@
  * unreleased additions) when a new version ships, and convert the
  * `unsupported_yet` branches the new version covers.
  */
+import { BASE_MAINNET_CAIP2_NETWORK } from '@constants/base'
 import { createErpcClient } from '@elsoul/erpc-sdk'
 import type { Env } from '@/types/env'
 
@@ -32,7 +33,7 @@ export const READABLE_NETWORKS = ['solana-mainnet', 'eip155:1', 'eip155:43114'] 
  * signature and an HTTPS request, not a Base RPC, and the facilitator submits
  * the transaction (the payer needs no ETH).
  */
-export const BASE_NETWORK = 'eip155:8453'
+export const BASE_NETWORK = BASE_MAINNET_CAIP2_NETWORK
 
 export class ErpcApiKeyMissingError extends Error {
   constructor() {

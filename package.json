@@ -13,7 +13,7 @@
     "assert:prod-config": "node scripts/assertProductionConfig.ts",
     "deploy:prod": "node scripts/assertProductionConfig.ts && wrangler deploy",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx --test src/wallet/derive.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/mcp/toolsList.test.ts",
+    "test": "tsx --test src/wallet/derive.test.ts src/chain/signBinding.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/reserve.test.ts src/lib/x402.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/mcp/toolsList.test.ts",
     "test:deploy": "pnpm test && pnpm assert:prod-config",
     "wallet:init": "node scripts/wallet-init.mjs"
   },
@@ -23,6 +23,8 @@
     "@noble/hashes": "catalog:",
     "@scure/base": "catalog:",
     "@scure/bip39": "catalog:",
+    "@x402/core": "catalog:",
+    "@x402/evm": "catalog:",
     "hono": "catalog:",
     "viem": "catalog:",
     "zod": "catalog:"

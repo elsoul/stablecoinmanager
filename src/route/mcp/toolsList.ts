@@ -36,6 +36,50 @@ const EXPORT_ARGS = z.strictObject({
   confirm: z.literal('EXPORT').optional(),
 })
 
+/**
+ * An idempotency key is REQUIRED on every tool that can move money, and it is
+ * the replay key: the same key returns the first receipt without signing
+ * anything a second time. Making it optional would make "pay twice" the
+ * default behaviour of a retry.
+ */
+const IDEMPOTENCY_KEY = z
+  .string()
+  .min(8)
+  .max(128)
+  .describe('Caller-chosen. Reusing it returns the first receipt instead of paying again.')
+
+const INSPECT_ARGS = z.strictObject({
+  url: z.string().url(),
+  method: z.string().optional(),
+  body: z.unknown().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  probeTwice: z
+    .boolean()
+    .optional()
+    .describe('Read the 402 twice and report whether its `extra` changed shape between reads.'),
+})
+
+const PAY_ARGS = z.strictObject({
+  url: z.string().url(),
+  idempotencyKey: IDEMPOTENCY_KEY,
+  method: z.string().optional(),
+  body: z.unknown().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+})
+
+const TOPUP_ARGS = z.strictObject({
+  amountCredits: z.number().int().min(1).max(100),
+  idempotencyKey: IDEMPOTENCY_KEY,
+})
+
+const HISTORY_ARGS = z.strictObject({
+  limit: z.number().int().min(1).max(200).optional(),
+})
+
+const RECEIPT_ARGS = z.strictObject({
+  idempotencyKey: IDEMPOTENCY_KEY,
+})
+
 function tool(
   name: string,
   description: string,
@@ -61,8 +105,38 @@ export const TOOLS: McpTool[] = [
     HOLDINGS_ARGS,
   ),
   tool(
+    'x402_inspect',
+    'Read an x402 402 challenge without paying it: what the resource wants, which requirement this wallet would pay, and what stands in the way. Set probeTwice to detect a requirement whose `extra` changes between reads, which turns a correct signature into price_mismatch.',
+    INSPECT_ARGS,
+  ),
+  tool(
+    'x402_pay',
+    'Pay an x402 402. Reserves in the ledger before signing, enforces the policy ceilings, and is idempotent on idempotencyKey: the same key returns the first receipt without signing again.',
+    PAY_ARGS,
+  ),
+  tool(
+    'erpc_topup',
+    'Buy ERPC credit for the account this worker holds the api-key for: mint a billing session, pay the 402 with x402_pay, then poll until the credit is granted and report the invoice number.',
+    TOPUP_ARGS,
+  ),
+  tool(
+    'history',
+    'Recent payments from the ledger, newest first.',
+    HISTORY_ARGS,
+  ),
+  tool(
+    'receipt',
+    'One payment in full, by its idempotencyKey. Answers "did that go through?" without paying anything.',
+    RECEIPT_ARGS,
+  ),
+  tool(
+    'policy_get',
+    'The active ceilings, any runtime overrides, and how much of today\'s allowance is left.',
+    NO_ARGS,
+  ),
+  tool(
     'wallet_export_seed',
-    'Reveal the 24-word recovery phrase. Requires confirm:"EXPORT", writes an audit row, and is rate limited. This is the only way to move the wallet off this deployment, and the only call that returns secret material.',
+    'Reveal the 24-word recovery phrase. Requires confirm:"EXPORT", writes an audit row, and is rate limited. It is the only tool here that returns secret material, and the only way to read the phrase back out of this deployment -- `wrangler secret` has no `get`. It is NOT the only way the phrase can leave: anyone who can deploy code to this worker can read the secret.',
     EXPORT_ARGS,
   ),
 ]

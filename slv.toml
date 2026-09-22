@@ -14,6 +14,28 @@ workflow_file = ".github/workflows/cf-mcp-stablecoin-manager.yml"
 branches = ["main"]
 paths = [
   "api/mcp/stablecoin-manager/**",
+  # This worker imports from constants/base.ts across its chain, policy and
+  # tool layers, and every value it takes is money-critical: the treasury
+  # address (ERPC_EURC_BASE_RECEIVING_WALLET), both token contracts, the EURC
+  # decimal count, the CAIP-2 network id, the explorer URL prefix. A change to
+  # any of them must redeploy this worker, so the whole file is watched rather
+  # than the one symbol that first motivated the entry.
+  #
+  # Deliberately no file count here: a tally in a comment is true on the day
+  # it is written and silently wrong afterwards, and nothing in CI reads it.
+  # `git grep -l "@constants/base" api/mcp/stablecoin-manager/src` answers it
+  # on demand.
+  #
+  # They are imported and not retyped on purpose. constants/base.ts carries
+  # each value together with its provenance and, on USDC, a standing ruling
+  # that top-ups are EURC-only -- a copied literal carries the number and
+  # drops everything around it. src/lib/x402.test.ts enforces that.
+  #
+  # Same precedent as api/mcp/master-api, which watches constants/config.ts
+  # for the same reason. This is one strand of the trigger-to-read closure the
+  # deploy-readset guard exists to generalise (#13979 B-1); not the whole
+  # closure.
+  "constants/base.ts",
   ".github/workflows/cf-mcp-stablecoin-manager.yml",
 ]
 

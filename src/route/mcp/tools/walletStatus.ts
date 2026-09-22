@@ -1,3 +1,4 @@
+import { BASE_MAINNET_CAIP2_NETWORK } from '@constants/base'
 import type { Env } from '@/types/env'
 import { deriveAddresses, WalletNotInitializedError } from '@/wallet/keys'
 import {
@@ -54,7 +55,7 @@ export async function walletStatus(env: Env): Promise<ToolResult> {
         // One EVM key, three chains. Displaying it once per chain is what the
         // "three wallets" in the product description actually means.
         evm: addresses.evm,
-        evmNetworks: ['eip155:1', 'eip155:8453', 'eip155:43114'],
+        evmNetworks: ['eip155:1', BASE_MAINNET_CAIP2_NETWORK, 'eip155:43114'],
       },
       reachability,
       policy,

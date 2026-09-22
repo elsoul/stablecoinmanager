@@ -8,12 +8,24 @@
  * exceeded, because quietly paying a smaller amount than asked is its own
  * kind of wrong answer.
  *
- * Values come from wrangler vars and can be overridden at runtime by
- * `policy_set`, which writes them to the ledger with an audit row.
+ * Values come from wrangler vars. 🔴 They are NOT overridden at runtime: the
+ * ledger has a `policy_overrides` table and `policy_get` reports its rows, but
+ * `loadPolicy` does not read them and no tool writes them yet. Both halves are
+ * PR-3.
+ *
+ * Saying otherwise is not a harmless anticipation. A reader who believes an
+ * override is in effect believes a ceiling is NARROWER than it is, and the
+ * direction that gets wrong is the expensive one -- an override written to
+ * tighten a limit would be silently inert while the wider deploy-time value
+ * kept applying (gilgamesh N2 / steiner N-3, #14018).
  */
+import { BASE_MAINNET_CAIP2_NETWORK } from '@constants/base'
 import type { Env } from '@/types/env'
+import { ERPC_TREASURY_BASE } from './x402'
 
 export interface Policy {
+  /** The only payee, unless allowAnyPayTo. */
+  allowedPayTo: string
   maxEurcPerPayment: number
   maxEurcPerDay: number
   allowedNetworks: string[]
@@ -23,8 +35,15 @@ export interface Policy {
   maxDeadlineSeconds: number
 }
 
-/** ERPC treasury on Base — the default and, unless opened, the only payee. */
-export const ERPC_TREASURY_BASE = '0x490842c32b83653dfd06eeeb53b9dbbf5d87f597'
+/**
+ * ERPC treasury on Base — the default and, unless opened, the only payee.
+ *
+ * Imported rather than re-declared: a second copy of a payee address is a
+ * second thing to update when it changes, and the one that does not get
+ * updated is the one that sends money somewhere else. The repo's own
+ * precedent for pinning this kind of value is api/mayan-api.
+ */
+export { ERPC_TREASURY_BASE } from './x402'
 
 export type PolicyViolation =
   | { kind: 'amount_over_per_payment'; limit: number; requested: number }
@@ -47,6 +66,7 @@ export class PolicyConfigError extends Error {
 
 export function loadPolicy(env: Env): Policy {
   return {
+    allowedPayTo: ERPC_TREASURY_BASE,
     maxEurcPerPayment: numberVar(
       'POLICY_MAX_EURC_PER_PAYMENT',
       env.POLICY_MAX_EURC_PER_PAYMENT,
@@ -54,7 +74,7 @@ export function loadPolicy(env: Env): Policy {
     ),
     maxEurcPerDay: numberVar('POLICY_MAX_EURC_PER_DAY', env.POLICY_MAX_EURC_PER_DAY, 200),
     allowedNetworks: listVar('POLICY_ALLOWED_NETWORKS', env.POLICY_ALLOWED_NETWORKS, [
-      'eip155:8453',
+      BASE_MAINNET_CAIP2_NETWORK,
       'solana-mainnet',
     ]),
     allowedAssets: listVar('POLICY_ALLOWED_ASSETS', env.POLICY_ALLOWED_ASSETS, [
@@ -130,7 +150,7 @@ export function checkPayment(
   }
 
   if (!policy.allowAnyPayTo) {
-    const allowed = [ERPC_TREASURY_BASE]
+    const allowed = [policy.allowedPayTo]
     if (!allowed.includes(intent.payTo.toLowerCase())) {
       violations.push({
         kind: 'payto_not_allowed',
