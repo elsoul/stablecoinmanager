@@ -236,5 +236,15 @@ test('a whitespace-only secret is NOT taken as a needle', () => {
   // `col1[redacted]col2` — for a value the rest of the worker calls absent.
   const blank = ' '.repeat(12)
   assert.deepEqual(heldSecrets({ JWT_SECRET: blank }), [])
-  assert.equal(redactString('col1          col2', [blank]), 'col1          col2')
+
+  // The probe must contain AT LEAST as many spaces as the needle, or this
+  // assertion passes whether or not the fix is present -- which is what it did
+  // when written (probe 10, needle 12). A test that cannot fail is worse than
+  // no test: it reports coverage it does not have.
+  const probe = `col1${' '.repeat(14)}col2`
+  assert.ok(probe.includes(blank), 'the probe must be able to match the needle')
+  assert.equal(redactString(probe, [blank]), probe)
+  // Positive control: a real secret of the same length IS removed.
+  const real = 'x'.repeat(12)
+  assert.notEqual(redactString(`col1${real}col2`, [real]), `col1${real}col2`)
 })

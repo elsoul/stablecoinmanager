@@ -194,8 +194,13 @@ test('SOURCE: claimExportThrottle contains no await', () => {
   const body = methodBody('claimExportThrottle')
   assert.ok(!/\bawait\b/.test(body), 'claimExportThrottle must not suspend')
 
-  // Positive control on the extractor itself: a method that does await.
-  assert.ok(/\bawait\b/.test(methodBody('appendAudit')) === false)
+  // NOT a positive control, and it was mislabelled as one: no method in this
+  // file contains `await` (the word appears only in doc comments), so there is
+  // nothing here that could demonstrate the matcher firing. What proves the
+  // extractor returns real content is the next line -- and what proves the
+  // await matcher works is mutation: adding one await reddens exactly this
+  // test, which is how it was verified.
+  assert.ok(!/\bawait\b/.test(methodBody('appendAudit')), 'no method awaits today')
   assert.ok(methodBody('claimExportThrottle').includes('INSERT INTO throttles'))
 })
 
