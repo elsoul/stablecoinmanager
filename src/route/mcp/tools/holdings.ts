@@ -25,9 +25,20 @@ export async function holdings(
   const addresses = deriveAddresses(env.WALLET_MNEMONIC ?? '')
   const erpc = createGateway(env)
 
-  const requested = args.networks?.length
-    ? args.networks
-    : [...READABLE_NETWORKS]
+  // 🔴 De-duplicated by CANONICAL id, keeping the first spelling the caller
+  // used. `solana-mainnet` and `solana:5eykt4...` are one chain, so asking for
+  // both used to return two entries for the same balance -- and a model that
+  // adds up what it is handed would report double the holdings
+  // (gilgamesh, #14054). The same normalisation that fixed the allowlist
+  // applies here: two names for one chain is one chain.
+  const requested: string[] = []
+  const seen = new Set<string>()
+  for (const network of args.networks?.length ? args.networks : READABLE_NETWORKS) {
+    const canonical = canonicalNetwork(network)
+    if (seen.has(canonical)) continue
+    seen.add(canonical)
+    requested.push(network)
+  }
 
   const entries: HoldingEntry[] = []
   const warnings: string[] = []

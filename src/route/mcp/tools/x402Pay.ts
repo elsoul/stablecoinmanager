@@ -1,5 +1,5 @@
 import type { Env } from '@/types/env'
-import { deriveAddresses, deriveEvmAccount } from '@/wallet/keys'
+import { deriveAddresses, deriveEvmSigner } from '@/wallet/keys'
 import { checkPayment, describeViolation } from '@/lib/policy'
 import { effectivePolicy } from '../policyFor'
 import {
@@ -115,16 +115,19 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     return fail({ requirements }, [], [reason ?? 'no payable requirement'])
   }
 
-  const amountEurc = Number(atomicToDecimal(chosen.amountAtomic, ASSET_DECIMALS))
+  // One intent object, checked twice: here to refuse before signing, and
+  // again inside the reservation where it is authoritative. Two descriptions
+  // of one payment is how the two checks would drift.
+  const intent = {
+    amountEurcEquivalent: atomicToDecimal(chosen.amountAtomic, ASSET_DECIMALS),
+    network: chosen.network,
+    asset: assetSymbol(chosen.asset),
+    payTo: chosen.payTo,
+    deadlineSeconds: chosen.maxTimeoutSeconds,
+  }
   const violations = checkPayment(
     policy,
-    {
-      amountEurcEquivalent: atomicToDecimal(chosen.amountAtomic, ASSET_DECIMALS),
-      network: chosen.network,
-      asset: assetSymbol(chosen.asset),
-      payTo: chosen.payTo,
-      deadlineSeconds: chosen.maxTimeoutSeconds,
-    },
+    intent,
     // The daily total is re-derived inside the reservation; this call only
     // needs the per-payment ceilings, so it passes 0 and lets the Durable
     // Object be the authority on what has been spent today.
@@ -143,10 +146,13 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     network: chosen.network,
     asset: chosen.asset,
     amountAtomic: chosen.amountAtomic,
-    amountEurc,
     payTo: chosen.payTo,
     resource: args.url,
-    dailyCeilingEurc: policy.maxEurcPerDay,
+    // No policy is passed: the ledger composes it in the same synchronous
+    // turn as the reservation, so an override that lands while this request
+    // is probing the resource binds to THIS payment (steiner N-11 #14054,
+    // B-1 #14067).
+    intent,
   })
 
   if (reservation.kind === 'replay') {
@@ -165,27 +171,60 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
       ],
     )
   }
+  if (reservation.kind === 'policy_violation') {
+    // The ledger refused on a policy that changed while this request was in
+    // flight. Nothing was signed: the refusal happens before the row is
+    // inserted.
+    return fail(
+      { requirement: chosen, violations: reservation.violations },
+      ['policy_get will show the ceilings now in force; they may have been tightened mid-request.'],
+      reservation.violations.map(describeViolation),
+    )
+  }
   if (reservation.kind === 'amount_not_finite') {
     return fail({ reservation }, [], ['the quoted amount is not a usable number'])
+  }
+
+  // 🔴 Every refusal must be handled before this line, and the type says so.
+  //
+  // Deleting the policy_violation branch above compiled and left 237 tests
+  // green, falling through to `signPayment` -- signing a payment the ledger
+  // refused and did not record, which this file's own docblock names as the
+  // one state that loses money. This PR added that variant; the branch that
+  // handles it was one forgotten `if` away from never existing
+  // (steiner B-2, #14067).
+  //
+  // Both directions are closed: a new variant is a compile error here, and
+  // if one reaches this line at runtime anyway, nothing is signed.
+  if (reservation.kind !== 'reserve') {
+    const unhandled: never = reservation
+    return fail({ reservation: unhandled }, [], [
+      'the ledger refused this payment in a way this tool does not recognise; nothing was signed',
+    ])
   }
 
   // From here a row exists in `pending`, and every exit below resolves it --
   // including the one that throws, which is why the resend is wrapped.
   let signed
   try {
-    signed = await signPayment(
-      deriveEvmAccount(env.WALLET_MNEMONIC ?? ''),
-      { headers: challenge.headers, body: challenge.body },
-      // 🔴 The requirement THIS WORKER chose, handed to the signer explicitly.
-      // Without it the SDK signs `accepts[0]` while every check above ran on
-      // `chosen` -- see chain/x402Client.ts.
-      {
-        scheme: chosen.scheme,
-        network: chosen.network,
-        asset: chosen.asset,
-        amountAtomic: chosen.amountAtomic,
-        payTo: chosen.payTo,
-      },
+    // The account is handed to a callback and never returned, so no value
+    // here holds viem's HDAccount -- whose `getHdKey` is an own enumerable
+    // key and a public accessor for the private key (gilgamesh P1, #14067).
+    signed = await deriveEvmSigner(env.WALLET_MNEMONIC ?? '').withAccount((account) =>
+      signPayment(
+        account,
+        { headers: challenge.headers, body: challenge.body },
+        // 🔴 The requirement THIS WORKER chose, handed to the signer
+        // explicitly. Without it the SDK signs `accepts[0]` while every check
+        // above ran on `chosen` -- see chain/x402Client.ts.
+        {
+          scheme: chosen.scheme,
+          network: chosen.network,
+          asset: chosen.asset,
+          amountAtomic: chosen.amountAtomic,
+          payTo: chosen.payTo,
+        },
+      ),
     )
   } catch (error) {
     await ledger.settlePayment({ idempotencyKey: args.idempotencyKey, status: 'failed' })

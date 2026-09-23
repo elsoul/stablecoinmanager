@@ -150,6 +150,31 @@ declare const EFFECTIVE: unique symbol
  */
 export type EffectivePolicyValue = Readonly<Policy> & { readonly [EFFECTIVE]: true }
 
+/**
+ * A ceiling, or 0 if it is not a number.
+ *
+ * 🔴 ALL FOUR comparisons, not just the two about money. The first version of
+ * this guard covered `maxEurcPerPayment` and `maxEurcPerDay` and left
+ * `maxSlippageBps` and `maxDeadlineSeconds` comparing against a possible NaN
+ * -- where `x > NaN` is false and the brake becomes a pass (steiner N-1,
+ * #14067).
+ *
+ * Scope, measured: neither production path can currently produce a non-finite
+ * ceiling. `numberVar` throws on 'NaN', 'Infinity' and '1e999', and
+ * `strictNumber` rejects them on the override side. So this is
+ * defense-in-depth, and the reason to make it symmetric is not a live leak --
+ * it is that two of four comparisons being guarded reads as a decision about
+ * the other two. That asymmetry is the shape this package has been closing
+ * all through #14054 and #14067.
+ *
+ * Direction: ceilings fall to 0 (refuse everything) and spend totals rise to
+ * Infinity (refuse everything). Both ends move toward refusal; reversing
+ * either one is a fail-open.
+ */
+function ceilingOf(limit: number): number {
+  return Number.isFinite(limit) ? limit : 0
+}
+
 export function checkPayment(
   policy: EffectivePolicyValue,
   intent: PaymentIntent,
@@ -165,18 +190,29 @@ export function checkPayment(
       requested: intent.amountEurcEquivalent,
     })
   } else {
-    if (amount > policy.maxEurcPerPayment) {
+    // 🔴 A non-finite CEILING fails closed too, not just a non-finite amount.
+    // See `ceilingOf` below; all four comparisons go through it.
+    // `x > NaN` is false, so an unreadable limit used to mean "no limit" --
+    // the comparison silently inverting from a brake into a pass. The daily
+    // side was guarded inside reserveDecision; the per-payment side was never
+    // guarded anywhere. The guard belongs here, where the comparison is: a
+    // money gate must not trust the policy it was handed to be a number.
+    const perPayment = ceilingOf(policy.maxEurcPerPayment)
+    const perDay = ceilingOf(policy.maxEurcPerDay)
+    const spent = Number.isFinite(spentTodayEurc) ? spentTodayEurc : Number.POSITIVE_INFINITY
+
+    if (amount > perPayment) {
       violations.push({
         kind: 'amount_over_per_payment',
-        limit: policy.maxEurcPerPayment,
+        limit: perPayment,
         requested: amount,
       })
     }
-    if (spentTodayEurc + amount > policy.maxEurcPerDay) {
+    if (spent + amount > perDay) {
       violations.push({
         kind: 'amount_over_daily',
-        limit: policy.maxEurcPerDay,
-        spentToday: spentTodayEurc,
+        limit: perDay,
+        spentToday: spent,
         requested: amount,
       })
     }
@@ -220,10 +256,10 @@ export function checkPayment(
   if (intent.slippageBps !== undefined) {
     if (!Number.isFinite(intent.slippageBps) || intent.slippageBps < 0) {
       violations.push({ kind: 'slippage_not_finite', requested: intent.slippageBps })
-    } else if (intent.slippageBps > policy.maxSlippageBps) {
+    } else if (intent.slippageBps > ceilingOf(policy.maxSlippageBps)) {
       violations.push({
         kind: 'slippage_over_limit',
-        limit: policy.maxSlippageBps,
+        limit: ceilingOf(policy.maxSlippageBps),
         requested: intent.slippageBps,
       })
     }
@@ -232,10 +268,10 @@ export function checkPayment(
   if (intent.deadlineSeconds !== undefined) {
     if (!Number.isFinite(intent.deadlineSeconds) || intent.deadlineSeconds < 0) {
       violations.push({ kind: 'deadline_not_finite', requested: intent.deadlineSeconds })
-    } else if (intent.deadlineSeconds > policy.maxDeadlineSeconds) {
+    } else if (intent.deadlineSeconds > ceilingOf(policy.maxDeadlineSeconds)) {
       violations.push({
         kind: 'deadline_over_limit',
-        limit: policy.maxDeadlineSeconds,
+        limit: ceilingOf(policy.maxDeadlineSeconds),
         requested: intent.deadlineSeconds,
       })
     }

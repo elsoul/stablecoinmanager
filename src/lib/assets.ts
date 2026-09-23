@@ -16,7 +16,7 @@ import {
   EURC_BASE_MAINNET_CONTRACT,
   USDC_BASE_MAINNET_CONTRACT,
 } from '@constants/base'
-import type { Policy } from './policy'
+import type { EffectivePolicyValue } from './policy'
 import { BASE_NETWORK } from './x402'
 import type { AssetPreference } from './x402'
 
@@ -29,7 +29,21 @@ const CATALOG: Array<AssetPreference & { symbol: string }> = [
 ]
 
 /** The catalog, filtered by what the policy currently allows. */
-export function allowedAssetPreferences(policy: Policy): AssetPreference[] {
+/**
+ * 🔴 Takes the EFFECTIVE policy, not a bare `Policy`.
+ *
+ * It was the last reader on the money path outside the brand. Harmless while
+ * it read only `allowedAssets` and `allowedNetworks`, neither of which is
+ * overridable -- and that is exactly the shape cyan named at the PR-3 gate:
+ * one function outside the barrier reads as "the barrier covers everything"
+ * until the day someone makes an asset list overridable, at which point this
+ * is the only place still consulting the ceiling (#14054).
+ *
+ * Making it a type error today costs one word and removes a future silent
+ * divergence, which is the trade the rest of this package has already made
+ * three times.
+ */
+export function allowedAssetPreferences(policy: EffectivePolicyValue): AssetPreference[] {
   const assets = new Set(policy.allowedAssets.map((a) => a.toUpperCase()))
   return CATALOG.filter(
     (entry) => assets.has(entry.symbol) && policy.allowedNetworks.allows(entry.network),
@@ -52,7 +66,7 @@ export function allowedAssetPreferences(policy: Policy): AssetPreference[] {
  * The policy still applies on top: it can narrow this to nothing (by removing
  * EURC or the Base network), it just cannot add USDC back.
  */
-export function topupAssetPreferences(policy: Policy): AssetPreference[] {
+export function topupAssetPreferences(policy: EffectivePolicyValue): AssetPreference[] {
   return allowedAssetPreferences(policy).filter(
     (entry) => entry.assetAddress.toLowerCase() === EURC_BASE.toLowerCase(),
   )

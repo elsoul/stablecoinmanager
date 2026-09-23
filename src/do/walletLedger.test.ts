@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
+import { OVERRIDE_ROWS_SQL, policyFromLedger, reserveDecision } from '@/lib/reserve'
+import { ERPC_TREASURY_BASE, loadPolicy } from '@/lib/policy'
 import { throttleIsLive } from '../lib/throttle.ts'
 
 // ---------------------------------------------------------------------------
@@ -172,7 +174,11 @@ function methodBody(name: string, file = 'do/walletLedger.ts'): string {
   // Methods are `async name(`; module-level handlers are `function name(`.
   // Both are matched so one extractor covers both, rather than a second copy
   // of this logic drifting away from the parameter-list fix below.
-  const start = ['async ', 'function '].reduce((found, prefix) => {
+  // `private ` is here because the ceiling reader is a synchronous private
+  // method: an extractor that only knows `async ` reports "not found", which
+  // is indistinguishable from "the method was deleted" -- the failure mode
+  // this helper's own comment below is about.
+  const start = ['async ', 'function ', 'private '].reduce((found, prefix) => {
     if (found !== -1) return found
     return source.indexOf(`${prefix}${name}(`)
   }, -1)
@@ -258,6 +264,55 @@ test('SOURCE: reservePayment contains no await', () => {
   assert.ok(body.includes('reserveDecision('), 'using the shared decision')
 })
 
+test('SOURCE: the effective policy is decided inside the reservation, not handed in', () => {
+  // 🔴 steiner N-11. The overrides feature opened a read-then-act window that
+  // did not exist before it: `x402Pay` read the effective ceiling at the top
+  // of the request and passed it down, with a DO round trip and a network
+  // probe of the resource in between. A `policy_set` landing in that window
+  // was stored and acknowledged and then not applied to the payment already in
+  // flight -- the exact payment an operator tightening a ceiling mid-incident
+  // is trying to stop.
+  //
+  // Two properties are checked, because either one alone is satisfiable by the
+  // broken version: the ceiling is read here, AND reading it does not suspend.
+  const body = methodBody('effectivePolicy')
+  assert.ok(!/\bawait\b/.test(body), 'effectivePolicy must not suspend')
+  assert.ok(
+    body.includes('policyFromLedger('),
+    'and compose them with the shared function that runs the query itself',
+  )
+  assert.match(
+    body,
+    /sql\.exec<\{ name: string; value: string \}>\(query\)/,
+    'handing it the real executor, not a lambda that returns nothing',
+  )
+  assert.ok(body.includes('loadPolicy('), 'which needs the deploy-time ceiling')
+  assert.ok(body.includes('refuseEverything('), 'and it must fail closed')
+
+  // And the caller must no longer be able to hand one in. A parameter that
+  // still exists is a parameter someone passes a stale value to.
+  const reserve = methodBody('reservePayment')
+  assert.ok(
+    !/dailyCeilingEurc:\s*input\./.test(reserve),
+    'reservePayment must not take a ceiling from its caller',
+  )
+  assert.ok(
+    reserve.includes('this.effectivePolicy(sql)'),
+    'it must compose the policy inside its own turn',
+  )
+  // 🔴 steiner B-2: the reservation must not be able to compute a refusal
+  // and ignore it. It cannot, because it does not compute one -- the whole
+  // decision arrives from `reserveDecision`, which node drives directly.
+  assert.ok(
+    reserve.includes('reserveDecision('),
+    'the decision must come from the shared pure function',
+  )
+  assert.ok(
+    !/checkPayment\s*\(/.test(reserve),
+    'and the reservation must not re-derive the policy check itself',
+  )
+})
+
 test('SOURCE: the pending row is written by the same method that checks', () => {
   // A reservation written by a different method than the one that read the
   // total is the interleaving bug wearing a different shape.
@@ -299,9 +354,13 @@ test('every query in the Durable Object prepares against the real schema', () =>
   // statements, so a change in this number is meant to be read and updated
   // deliberately, not to be loosened to `> 0`.
   //
-  // 14 as of PR-3, which added setPolicyOverride's two writes. It was 12 in
-  // PR-2, and this guard is what reported the change rather than absorbing it.
-  assert.equal(queries.length, 14, 'extractor still finds the DO statements')
+  // 13: `policyOverrides` was retyping the same SELECT that
+  // `OVERRIDE_ROWS_SQL` already holds, so there were two copies of one query
+  // in this file (cyan N-3). It now uses the constant, and the extractor --
+  // which only sees literals here -- counts one fewer. It was 14 earlier in
+  // PR-4, 15 briefly, 14 in PR-3, 12 in PR-2, and this guard reported every
+  // one of those moves rather than absorbing them.
+  assert.equal(queries.length, 13, 'extractor still finds the DO statements')
 
   for (const query of queries) {
     // `db.prepare` throws on an unknown table or column, which is exactly the
@@ -611,6 +670,76 @@ test('SOURCE: setPolicyOverride contains no await', () => {
   assert.ok(!/\bawait\b/.test(body), 'setPolicyOverride must not suspend')
   assert.match(body, /INSERT INTO policy_overrides\s*\(/, 'it writes the override')
   assert.match(body, /INSERT INTO audit\s*\(/, 'and the audit row')
+})
+
+test('REACH: an override written to the real table refuses the next payment', () => {
+  // 🔴 gilgamesh R2-N1. The binding "an override that lands mid-request binds
+  // to THIS payment" was held by a SOURCE pin alone, and the pin passes a
+  // broken implementation: `policyFromOverrideRows(loadPolicy(env), rows)`
+  // changed to `(..., [])` keeps every token the pin looks for -- the SELECT,
+  // the composition, the ceiling -- while discarding what it read. Measured
+  // at the previous head: 237 pass, 0 red.
+  //
+  // So this runs the chain instead of reading it: write an override with the
+  // real upsert into the real schema, read it back with the SAME string
+  // production uses (OVERRIDE_ROWS_SQL), compose, and ask the decision.
+  const db = migrated()
+  const source = readFileSync(join(import.meta.dirname, 'walletLedger.ts'), 'utf8')
+  const upsert = source
+    .slice(source.indexOf('async setPolicyOverride'))
+    .match(/`INSERT INTO policy_overrides[\s\S]*?`/)
+  assert.ok(upsert, 'the real upsert was extracted from the source')
+
+  const intent = {
+    amountEurcEquivalent: '40',
+    network: 'eip155:8453',
+    asset: 'EURC',
+    payTo: ERPC_TREASURY_BASE,
+  }
+  const ceiling = loadPolicy({ POLICY_ALLOW_ANY_PAYTO: 'true' } as never)
+  // The executor production uses, backed by the real table. `policyFromLedger`
+  // runs the query itself, so discarding the rows would have to happen inside
+  // the function this drives.
+  const select = (query: string) =>
+    db.prepare(query).all() as { name: string; value: string }[]
+  const read = () => policyFromLedger(ceiling, select)
+
+  // Control first: with no override, 40 EURC is inside the shipped ceiling.
+  assert.equal(
+    reserveDecision({
+      existing: undefined,
+      spentTodayEurc: 0,
+      policy: read(),
+      intent,
+    }).kind,
+    'reserve',
+    'control: the deploy-time ceiling allows this payment',
+  )
+
+  // Now an operator tightens the per-payment limit -- the key the first
+  // version of this fix did not read at all (steiner B-1).
+  db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerPayment', '5', 1000)
+  const refused = reserveDecision({
+    existing: undefined,
+    spentTodayEurc: 0,
+    policy: read(),
+    intent,
+  })
+  assert.equal(refused.kind, 'policy_violation', 'the stored override must bind')
+  assert.deepEqual(
+    refused.kind === 'policy_violation' ? refused.violations.map((v) => v.kind) : [],
+    ['amount_over_per_payment'],
+  )
+
+  // And the daily key too, so this does not pass by covering one ceiling.
+  db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerDay', '1', 2000)
+  const daily = reserveDecision({
+    existing: undefined,
+    spentTodayEurc: 0,
+    policy: read(),
+    intent: { ...intent, amountEurcEquivalent: '2' },
+  })
+  assert.equal(daily.kind, 'over_daily_ceiling')
 })
 
 test('the override and its audit row land together, against the real schema', () => {

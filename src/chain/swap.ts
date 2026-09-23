@@ -15,6 +15,24 @@
  *      has to be WETH -> USDC, and there is no wrap step in the SDK.
  *   2. `allowance` is returned as a REQUIREMENT, not as something the SDK
  *      performs. Approving is ours to do, and it is a second signature.
+ *
+ * 🔴 NOTHING IN PRODUCTION IMPORTS THIS MODULE, on purpose.
+ *
+ * The `swap` tool answers with a route and refuses to broadcast, so none of
+ * the code below runs today. Its tests pass, which is the problem worth
+ * naming: a module with a green test file and no caller reads as covered, and
+ * "covered" is what someone relies on when they wire it up.
+ *
+ * It is kept rather than deleted because the measurements above are the
+ * expensive part and they are correct; deleting them means re-deriving them
+ * against the same SDK. It is DECLARED rather than merely left here because
+ * silence is what made it look alive: `chain/swap.test.ts` pins that the
+ * importer count is zero, so the commit that finally wires this in reddens
+ * and has to come back and delete this banner
+ * (steiner, #14054 -- deferred from PR-3 to here).
+ *
+ * What unblocks it: a funded wallet, so the broadcast path can be exercised
+ * in production before it ships rather than after.
  */
 import type { HDAccount } from 'viem'
 import type {

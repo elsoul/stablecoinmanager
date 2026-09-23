@@ -1,5 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import {
   networkAllowlist,
   type NetworkAllowlist,
@@ -256,4 +258,48 @@ test('describe() and toJSON() are the named escapes, and they behave as document
       `${prefix} must not be allowed; substring matching would have said yes`,
     )
   }
+})
+
+test('two spellings of one chain de-duplicate to one request', () => {
+  // 🔴 gilgamesh: `holdings` took its network list straight from the caller,
+  // so asking for `solana-mainnet` AND the CAIP-2 form returned two entries
+  // for the same balance. Nothing was wrong with either entry; the damage is
+  // that a model adding up what it is handed reports double the holdings.
+  //
+  // This drives the rule the tool now applies. The tool itself reaches
+  // `cloudflare:workers` and cannot be loaded here -- the same constraint
+  // that produced lib/settle.ts -- so the decision lives where node can run
+  // it and a source pin keeps the tool on it.
+  const dedupe = (networks: readonly string[]): string[] => {
+    const out: string[] = []
+    const seen = new Set<string>()
+    for (const network of networks) {
+      const canonical = canonicalNetwork(network)
+      if (seen.has(canonical)) continue
+      seen.add(canonical)
+      out.push(network)
+    }
+    return out
+  }
+
+  assert.deepEqual(
+    dedupe([SOLANA_MAINNET_LOCAL, SOLANA_MAINNET_CAIP2]),
+    [SOLANA_MAINNET_LOCAL],
+    'the first spelling the caller used is the one echoed back',
+  )
+  assert.deepEqual(dedupe([SOLANA_MAINNET_CAIP2, SOLANA_MAINNET_LOCAL]), [SOLANA_MAINNET_CAIP2])
+  assert.deepEqual(
+    dedupe(['eip155:1', SOLANA_MAINNET_LOCAL, 'eip155:1']),
+    ['eip155:1', SOLANA_MAINNET_LOCAL],
+    'and unrelated chains are not collapsed into each other',
+  )
+})
+
+test('SOURCE: holdings de-duplicates by canonical id', () => {
+  const source = readFileSync(
+    join(import.meta.dirname, '..', 'route', 'mcp', 'tools', 'holdings.ts'),
+    'utf8',
+  )
+  assert.match(source, /seen\.has\(canonical\)/, 'holdings must skip a chain it already queued')
+  assert.match(source, /canonicalNetwork\(network\)/, 'and it must canonicalise before comparing')
 })

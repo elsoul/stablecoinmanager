@@ -13,7 +13,15 @@
 import { DurableObject } from 'cloudflare:workers'
 import type { Env } from '@/types/env'
 import { throttleIsLive } from '@/lib/throttle'
-import { reserveDecision, type ReserveOutcome } from '@/lib/reserve'
+import {
+  OVERRIDE_ROWS_SQL,
+  policyFromLedger,
+  refuseEverything,
+  reserveDecision,
+  type ReserveOutcome,
+} from '@/lib/reserve'
+import { loadPolicy, type PaymentIntent } from '@/lib/policy'
+import type { EffectivePolicyValue } from '@/lib/policy'
 
 export interface AuditRow {
   id: number
@@ -108,10 +116,14 @@ export class WalletLedger extends DurableObject<Env> {
     network: string
     asset: string
     amountAtomic: string
-    amountEurc: number
     payTo: string
     resource?: string
-    dailyCeilingEurc: number
+    /**
+     * What the caller is about to pay, checked HERE against the policy
+     * composed in this turn. The caller checks too, before signing, but that
+     * check reads a policy that can be a network round trip old.
+     */
+    intent: PaymentIntent
     now?: number
   }): Promise<ReserveOutcome> {
     const now = input.now ?? Date.now()
@@ -144,11 +156,14 @@ export class WalletLedger extends DurableObject<Env> {
       )
       .toArray()
 
+    // 🔴 The WHOLE decision, including the policy check, comes back from one
+    // pure function. Nothing here can compute a refusal and then ignore it,
+    // because nothing here computes one (steiner B-2, #14067).
     const decision = reserveDecision({
       existing: existing[0],
       spentTodayEurc: spentRows[0]?.total ?? 0,
-      amountEurc: input.amountEurc,
-      dailyCeilingEurc: input.dailyCeilingEurc,
+      policy: this.effectivePolicy(sql),
+      intent: input.intent,
     })
     if (decision.kind !== 'reserve') return decision
 
@@ -161,13 +176,72 @@ export class WalletLedger extends DurableObject<Env> {
       input.network,
       input.asset,
       input.amountAtomic,
-      input.amountEurc,
+      decision.amountEurc,
       input.payTo,
       input.resource ?? null,
       now,
       now,
     )
     return decision
+  }
+
+  /**
+   * The EFFECTIVE policy, composed HERE rather than handed in.
+   *
+   * 🔴 This closes a read-then-act window that the overrides feature created.
+   * `reservePayment` used to take `dailyCeilingEurc` from the caller, and
+   * `x402Pay` read it at the top of the request -- before a DO round trip and
+   * a network probe of the resource. A `policy_set` landing inside that window
+   * was written, acknowledged, and then not applied to the payment already in
+   * flight: precisely the payment an operator tightening a ceiling during an
+   * incident is trying to stop (steiner N-11, #14054).
+   *
+   * 🔴 ALL FOUR overridable ceilings, not just the daily one. The first
+   * version of this read `maxEurcPerDay` alone and its docblock claimed the
+   * window was closed "completely". It was not: `maxEurcPerPayment`,
+   * `maxSlippageBps` and `maxDeadlineSeconds` still came from the caller's
+   * stale read, so tightening the per-payment limit mid-flight let a payment
+   * through that a fresh check refused -- fail-OPEN, in the one feature whose
+   * purpose is to stop a payment (steiner B-1, #14067). That was the fifth
+   * unqualified completeness claim this package has been caught making, which
+   * is why the fix is to close the window rather than to qualify the sentence.
+   *
+   * Scope, stated rather than implied: the deploy-time ceiling cannot change
+   * without a redeploy, and every value that CAN change at runtime is an
+   * override row read by the SELECT below. There is no third input.
+   *
+   * 🔴 MUST NOT CONTAIN AN `await`, for the reason spelled out on
+   * `claimExportThrottle`: DO methods interleave at await boundaries, and what
+   * makes this atomic is that `sql.exec` is synchronous.
+   *
+   * 🔴 When this falls to `refuseEverything()`, and when it does NOT.
+   *
+   * It falls there only if `loadPolicy` THROWS, which happens only when a
+   * `POLICY_*` var is present and unusable ('NaN', 'Infinity', '1e999', '',
+   * '0', '-1'). An ABSENT var does not throw: `numberVar` and `listVar`
+   * return their built-in default, deliberately, and `policy.test.ts` pins
+   * that by name.
+   *
+   * So "the Durable Object cannot see [vars]" lands on the DEFAULTS, not on
+   * a refusal -- and the shipped `[vars]` are byte-identical to those
+   * defaults, so the two are indistinguishable from the outside. An earlier
+   * version of this comment claimed the opposite and sent a reader looking
+   * for a refusal that would not come (cyan B-2/B-3, #14067). The executable
+   * form of both facts is in `lib/reserve.test.ts`.
+   *
+   * The `try` also spans the SELECT, but nothing else here throws:
+   * `policy_overrides` is created in the constructor's
+   * `blockConcurrencyWhile`, and neither `effectivePolicy.ts` nor
+   * `policyOverride.ts` contains a `throw`.
+   */
+  private effectivePolicy(sql: SqlStorage): EffectivePolicyValue {
+    try {
+      return policyFromLedger(loadPolicy(this.env), (query) =>
+        sql.exec<{ name: string; value: string }>(query).toArray(),
+      )
+    } catch {
+      return refuseEverything()
+    }
   }
 
   /**
@@ -247,7 +321,7 @@ export class WalletLedger extends DurableObject<Env> {
    */
   async policyOverrides(): Promise<Record<string, string>> {
     const rows = this.ctx.storage.sql
-      .exec<{ name: string; value: string }>(`SELECT name, value FROM policy_overrides`)
+      .exec<{ name: string; value: string }>(OVERRIDE_ROWS_SQL)
       .toArray()
     return Object.fromEntries(rows.map((row) => [row.name, row.value]))
   }

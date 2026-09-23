@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join, sep } from 'node:path'
 import { approvalGap, assertNoNativeValue, planSwap } from './swap.ts'
 
 // ---------------------------------------------------------------------------
@@ -69,4 +71,40 @@ test('planSwap reports the approval gap without signing anything', async () => {
   assert.equal(plan.needsApproval, true)
   assert.equal(plan.approvalShortfall, '500')
   assert.equal(plan.preparation, simulation.preparation, 'the preparation is carried through')
+})
+
+test('BARRIER: this module is still unreached from production', () => {
+  // 🔴 An inverted pin: it fails when the condition it describes stops being
+  // true. The module's banner says nothing in production imports it, and a
+  // banner is a claim that rots silently -- exactly the class this package
+  // spent seven review rounds on. Wiring the module in reddens here, and the
+  // fix is to delete the banner and this test in the same commit.
+  //
+  // Counted from src rather than from a remembered list, because the version
+  // of this that enumerates candidate importers is the version that misses
+  // the one that matters.
+  const root = join(import.meta.dirname, '..')
+  const importers: string[] = []
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(full)
+        continue
+      }
+      if (!entry.name.endsWith('.ts')) continue
+      if (full.endsWith(join('chain', 'swap.ts'))) continue
+      if (full.endsWith(join('chain', 'swap.test.ts'))) continue
+      if (/from\s+'(@\/chain\/swap|\.\/swap)(\.ts)?'/.test(readFileSync(full, 'utf8'))) {
+        importers.push(full.slice(root.length + 1).split(sep).join('/'))
+      }
+    }
+  }
+  walk(root)
+  assert.deepEqual(
+    importers,
+    [],
+    `chain/swap.ts is now imported by ${importers.join(', ')} -- ` +
+      'delete the "nothing imports this" banner and this test',
+  )
 })

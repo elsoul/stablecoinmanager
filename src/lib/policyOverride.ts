@@ -53,6 +53,24 @@ function strictNumber(raw: unknown): number | null {
   return Number.isFinite(value) ? value : null
 }
 
+/**
+ * One ceiling, one stored value, tighten-only. Exported because the Durable
+ * Object needs exactly this decision INSIDE its own synchronous turn.
+ *
+ * 🔴 It is the same code `applyOverrides` runs, not a second copy. This file
+ * has already paid once for answering one question with two predicates
+ * (see utils/redact.ts, where the collector trimmed and the stripper did not),
+ * and a second copy here would be the version that decides how much money
+ * leaves the wallet.
+ */
+export function tightenedValue(ceiling: number, raw: unknown): number {
+  const value = strictNumber(raw)
+  // Unreadable or absent -> the ceiling stands. A widening row -> ignored, by
+  // the same one-way rule decideSet enforces at write time.
+  if (value === null || value > ceiling) return ceiling
+  return value
+}
+
 export type SetOutcome =
   | { kind: 'set'; key: OverridableKey; from: number; to: number }
   | { kind: 'not_overridable'; key: string; allowed: readonly string[] }
@@ -112,12 +130,9 @@ export function applyOverrides(policy: Policy, rows: OverrideRows): EffectivePol
   for (const key of OVERRIDABLE) {
     const raw = rows[key]
     if (raw === undefined) continue
-    const value = strictNumber(raw)
-    if (value === null) continue
     // The same one-way rule as decideSet, enforced again at read time: a row
     // written before this rule existed, or by a future tool, cannot widen.
-    if (value > policy[key]) continue
-    next[key] = value
+    next[key] = tightenedValue(policy[key], raw)
   }
   // The single mint. See the docblock above.
   return next as EffectivePolicyValue

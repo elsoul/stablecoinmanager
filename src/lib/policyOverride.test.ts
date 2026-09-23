@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { test } from 'node:test'
-import { applyOverrides, decideSet, OVERRIDABLE } from './policyOverride.ts'
+import { applyOverrides, decideSet, OVERRIDABLE, tightenedValue } from './policyOverride.ts'
 import type { EffectivePolicyValue, Policy } from './policy.ts'
 import { networkAllowlist } from './networks.ts'
 
@@ -354,5 +354,40 @@ test('BACKSTOP: nothing in src compares a network with a raw string match', () =
     [...new Set(offenders)].sort(),
     [],
     `these compare networks without normalising: ${offenders}`,
+  )
+})
+
+test('tightenedValue narrows, never widens, and fails to the ceiling', () => {
+  // The single-key rule the Durable Object runs inside its own turn. It is
+  // exported so the DO can reach it, which means it is now load-bearing in
+  // two places -- the point of exporting rather than copying.
+  assert.equal(tightenedValue(50, '5'), 5, 'a narrower stored value applies')
+  assert.equal(tightenedValue(50, '50'), 50, 'equal is not widening')
+  assert.equal(tightenedValue(50, '500'), 50, 'a widening row is ignored')
+  assert.equal(tightenedValue(50, undefined), 50, 'no row -> the ceiling stands')
+  assert.equal(tightenedValue(50, 0), 0, '0 is a legitimate refuse-everything')
+  assert.equal(tightenedValue(50, '0'), 0)
+
+  // Unreadable must fall back to the CEILING, not to 0 and not to the raw
+  // value. Number('') and Number(null) are both 0, which is why this uses a
+  // strict parse rather than a cast.
+  for (const junk of ['', '   ', 'abc', '5e3', '-1', null, {}, [], true, NaN]) {
+    assert.equal(
+      tightenedValue(50, junk),
+      50,
+      `unreadable override ${JSON.stringify(junk)} must leave the ceiling in place`,
+    )
+  }
+})
+
+test('applyOverrides and the Durable Object answer with the same code', () => {
+  // Not "the same behaviour" -- the same function. Two predicates for one
+  // question is a defect this repo has paid for (utils/redact.ts), and this
+  // one decides how much money leaves the wallet.
+  const source = readFileSync(join(import.meta.dirname, 'policyOverride.ts'), 'utf8')
+  const body = source.slice(source.indexOf('export function applyOverrides'))
+  assert.ok(
+    body.includes('tightenedValue('),
+    'applyOverrides must use the exported rule, not an inline copy',
   )
 })

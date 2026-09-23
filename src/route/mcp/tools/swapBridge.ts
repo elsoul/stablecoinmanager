@@ -44,11 +44,17 @@ function checkSlippage(
   requested: number | undefined,
   limit: number,
 ): { value: number } | { error: ToolResult } {
-  const value = requested ?? limit
-  if (!Number.isFinite(value) || value < 0 || value > limit) {
+  // A non-finite ceiling refuses, for the same reason as checkPayment's:
+  // `value > NaN` is false, so an unreadable limit would accept anything.
+  // `requested ?? limit` would also hand a NaN limit straight back as the
+  // value, which then fails the finiteness test -- refusal either way, but
+  // through the guard rather than by accident (steiner N-1, #14067).
+  const ceiling = Number.isFinite(limit) ? limit : 0
+  const value = requested ?? ceiling
+  if (!Number.isFinite(value) || value < 0 || value > ceiling) {
     return {
-      error: fail({ slippageBps: value, limit }, [], [
-        `slippageBps must be between 0 and ${limit}`,
+      error: fail({ slippageBps: value, limit: ceiling }, [], [
+        `slippageBps must be between 0 and ${ceiling}`,
       ]),
     }
   }

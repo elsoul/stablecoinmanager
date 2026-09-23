@@ -20,8 +20,11 @@ import {
   normalizeAccepts,
   selectRequirement,
 } from './x402.ts'
-import type { Policy } from './policy.ts'
+import type { EffectivePolicyValue, Policy } from './policy.ts'
 import { networkAllowlist } from './networks.ts'
+
+/** Test-only mint; see the note in policy.test.ts. */
+const asEffective = (p: Policy): EffectivePolicyValue => p as EffectivePolicyValue
 
 const POLICY: Policy = {
   allowedPayTo: ERPC_TREASURY_BASE,
@@ -79,7 +82,7 @@ test('a missing accepts array is empty, not a crash', () => {
 })
 
 test('selection prefers EURC on Base, then USDC on Base', () => {
-  const prefs = allowedAssetPreferences(POLICY)
+  const prefs = allowedAssetPreferences(asEffective(POLICY))
   assert.deepEqual(prefs.map((p) => p.label), ['EURC', 'USDC'])
 
   const both = normalizeAccepts([
@@ -91,7 +94,7 @@ test('selection prefers EURC on Base, then USDC on Base', () => {
 })
 
 test('selection refuses rather than falling back to whatever is first', () => {
-  const prefs = allowedAssetPreferences(POLICY)
+  const prefs = allowedAssetPreferences(asEffective(POLICY))
   const unknownAsset = normalizeAccepts([
     { ...eurcOnBase, asset: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' },
   ])
@@ -101,7 +104,7 @@ test('selection refuses rather than falling back to whatever is first', () => {
 })
 
 test('an unsignable requirement is never chosen', () => {
-  const prefs = allowedAssetPreferences(POLICY)
+  const prefs = allowedAssetPreferences(asEffective(POLICY))
   const solanaOnly = normalizeAccepts([{ ...eurcOnBase, network: 'solana-mainnet' }])
   const { chosen, reason } = selectRequirement(solanaOnly, prefs)
   assert.equal(chosen, undefined)
@@ -109,15 +112,15 @@ test('an unsignable requirement is never chosen', () => {
 })
 
 test('an empty 402 says so', () => {
-  const { chosen, reason } = selectRequirement([], allowedAssetPreferences(POLICY))
+  const { chosen, reason } = selectRequirement([], allowedAssetPreferences(asEffective(POLICY)))
   assert.equal(chosen, undefined)
   assert.match(reason ?? '', /no requirements/)
 })
 
 test('policy narrowing removes assets from the preference list', () => {
-  const eurcOnly = allowedAssetPreferences({ ...POLICY, allowedAssets: ['EURC'] })
+  const eurcOnly = allowedAssetPreferences(asEffective({ ...POLICY, allowedAssets: ['EURC'] }))
   assert.deepEqual(eurcOnly.map((p) => p.label), ['EURC'])
-  const none = allowedAssetPreferences({ ...POLICY, allowedNetworks: networkAllowlist(['solana-mainnet']) })
+  const none = allowedAssetPreferences(asEffective({ ...POLICY, allowedNetworks: networkAllowlist(['solana-mainnet']) }))
   assert.deepEqual(none, [])
 })
 
@@ -341,12 +344,39 @@ test('SOURCE: every atomicToDecimal call uses the shared decimals constant', () 
     }
   }
 
-  // Vacuity guard: four call sites today. A new one is meant to be read here.
-  assert.equal(calls.length, 4, `call sites found:\n${calls.join('\n')}`)
+  // Vacuity guard: three call sites. It was four until PR-4 unified the
+  // amount onto the intent and the duplicate `const amountEurc` in x402Pay
+  // went with it (cyan N-1). A change in this number is meant to be read.
+  assert.equal(calls.length, 3, `call sites found:\n${calls.join('\n')}`)
   for (const call of calls) {
     assert.ok(
       call.includes('ASSET_DECIMALS'),
       `${call} passes a literal instead of ASSET_DECIMALS`,
     )
   }
+})
+
+test('BARRIER: the asset preference readers require an effective policy', () => {
+  // 🔴 Measured, not assumed: reverting these signatures to a bare `Policy`
+  // reddened NOTHING -- 0 type errors, 0 failures -- because
+  // EffectivePolicyValue is a subtype of Policy, so widening a parameter
+  // accepts everything that used to be passed. The barrier had no barrier,
+  // which is the same gap gilgamesh found on NetworkAllowlist at the PR-3
+  // gate (#14054 R5-N2).
+  //
+  // The directive below inverts the signal: it becomes TS2578 the moment the
+  // expression stops failing, so widening the parameter breaks `pnpm check`.
+  // Kept off the hot path in a function nobody calls, because a suppression
+  // silences the checker without stopping the code from running.
+  const compileOnly = (ceiling: Policy): void => {
+    // @ts-expect-error a deploy-time ceiling must not reach the asset filter
+    allowedAssetPreferences(ceiling)
+    // @ts-expect-error nor the top-up subset of it
+    topupAssetPreferences(ceiling)
+  }
+  assert.equal(typeof compileOnly, 'function')
+
+  // And the effective policy still works, so the pin is not just rejecting
+  // everything.
+  assert.ok(allowedAssetPreferences(asEffective(POLICY)).length > 0)
 })
