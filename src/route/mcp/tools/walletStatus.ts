@@ -7,11 +7,13 @@ import {
   probeReachability,
   type Reachability,
 } from '@/chain/gateway'
-import { loadPolicy } from '@/lib/policy'
+import { effectivePolicy } from '../policyFor'
 import { fail, ok, type ToolResult } from '../result'
 
 export async function walletStatus(env: Env): Promise<ToolResult> {
-  const policy = loadPolicy(env)
+  // EFFECTIVE: the policy this reports is the one payments are checked
+  // against, not the deploy-time ceiling.
+  const { effective: policy } = await effectivePolicy(env)
 
   let addresses: { solana: string; evm: string } | null = null
   try {

@@ -21,12 +21,13 @@ import {
   selectRequirement,
 } from './x402.ts'
 import type { Policy } from './policy.ts'
+import { networkAllowlist } from './networks.ts'
 
 const POLICY: Policy = {
   allowedPayTo: ERPC_TREASURY_BASE,
   maxEurcPerPayment: 50,
   maxEurcPerDay: 200,
-  allowedNetworks: [BASE_NETWORK, 'solana-mainnet'],
+  allowedNetworks: networkAllowlist([BASE_NETWORK, 'solana-mainnet']),
   allowedAssets: ['EURC', 'USDC'],
   allowAnyPayTo: false,
   maxSlippageBps: 50,
@@ -116,7 +117,7 @@ test('an empty 402 says so', () => {
 test('policy narrowing removes assets from the preference list', () => {
   const eurcOnly = allowedAssetPreferences({ ...POLICY, allowedAssets: ['EURC'] })
   assert.deepEqual(eurcOnly.map((p) => p.label), ['EURC'])
-  const none = allowedAssetPreferences({ ...POLICY, allowedNetworks: ['solana-mainnet'] })
+  const none = allowedAssetPreferences({ ...POLICY, allowedNetworks: networkAllowlist(['solana-mainnet']) })
   assert.deepEqual(none, [])
 })
 
@@ -163,7 +164,7 @@ test('drift compares SHAPE, not values', () => {
 test('a credit top-up may be paid in EURC only, whatever the policy allows', () => {
   const permissive = {
     allowedAssets: ['EURC', 'USDC'],
-    allowedNetworks: [BASE_NETWORK],
+    allowedNetworks: networkAllowlist([BASE_NETWORK]),
   } as unknown as Parameters<typeof topupAssetPreferences>[0]
 
   const generic = allowedAssetPreferences(permissive)
@@ -191,7 +192,7 @@ test('the policy can still narrow a top-up to nothing, it just cannot widen it',
   // to USDC -- which is the whole point of the filter.
   const noEurc = {
     allowedAssets: ['USDC'],
-    allowedNetworks: [BASE_NETWORK],
+    allowedNetworks: networkAllowlist([BASE_NETWORK]),
   } as unknown as Parameters<typeof topupAssetPreferences>[0]
   assert.equal(allowedAssetPreferences(noEurc).length, 1)
   assert.equal(topupAssetPreferences(noEurc).length, 0)
@@ -244,8 +245,15 @@ test('SOURCE: erpc_topup actually hands the EURC-only list to x402_pay', () => {
     join(import.meta.dirname, '..', 'route', 'mcp', 'toolsList.ts'),
     'utf8',
   )
+  // Comments stripped first. PR-3 added a docblock saying why the field is
+  // absent, and a predicate that cannot tell prose from a declaration reports
+  // the explanation as the violation -- measured. The same fix the mnemonic
+  // guard needed.
+  const schemaCode = schema
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
   assert.ok(
-    !schema.includes('assetPreferences'),
+    !schemaCode.includes('assetPreferences'),
     'assetPreferences must not be a client-settable argument',
   )
 })

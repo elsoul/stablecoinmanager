@@ -1,5 +1,5 @@
 import type { Env } from '@/types/env'
-import { loadPolicy } from '@/lib/policy'
+import { effectivePolicy } from '../policyFor'
 import { LEDGER_INSTANCE_NAME, type WalletLedger } from '@/do/walletLedger'
 import { ok, type ToolResult } from '../result'
 
@@ -35,10 +35,15 @@ export async function policyGet(env: Env): Promise<ToolResult> {
     ledger.policyOverrides(),
     ledger.spentTodayEurc(),
   ])
-  const policy = loadPolicy(env)
+  // Reports the EFFECTIVE policy, which is what payments are checked against.
+  // Returning the ceiling here is what made the gap invisible: policy_set said
+  // "now 5", policy_get said "50", and neither was reporting what the money
+  // path used.
+  const { effective: policy, ceiling } = await effectivePolicy(env)
   return ok(
     {
       policy,
+      ceiling,
       overrides,
       spentTodayEurc: spentToday,
       remainingTodayEurc: Math.max(0, policy.maxEurcPerDay - spentToday),

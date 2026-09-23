@@ -8,19 +8,26 @@
  * exceeded, because quietly paying a smaller amount than asked is its own
  * kind of wrong answer.
  *
- * Values come from wrangler vars. 🔴 They are NOT overridden at runtime: the
- * ledger has a `policy_overrides` table and `policy_get` reports its rows, but
- * `loadPolicy` does not read them and no tool writes them yet. Both halves are
- * PR-3.
+ * Values come from wrangler vars, and this function is the DEPLOY-TIME
+ * CEILING. It deliberately takes only `env` and cannot reach the ledger, so
+ * nothing the worker stores at runtime can raise it.
  *
- * Saying otherwise is not a harmless anticipation. A reader who believes an
- * override is in effect believes a ceiling is NARROWER than it is, and the
- * direction that gets wrong is the expensive one -- an override written to
- * tighten a limit would be silently inert while the wider deploy-time value
- * kept applying (gilgamesh N2 / steiner N-3, #14018).
+ * Runtime overrides exist as of PR-3 and may only TIGHTEN. They are composed
+ * on top of this by `lib/effectivePolicy.ts`, read via
+ * `route/mcp/policyFor.ts`, and every tool enforces the EFFECTIVE result --
+ * `policy_set` is the one caller that compares against this ceiling.
+ *
+ * 🔴 That wiring is the whole point, and it was missing when PR-3 was first
+ * opened: `policy_set` wrote overrides while x402_pay and erpc_topup still
+ * called `loadPolicy` directly, so a tightened ceiling was silently inert and
+ * the tool reported success. A reader who believes an override is in effect
+ * believes a ceiling is NARROWER than it is, and that is the expensive
+ * direction (gilgamesh B1 / steiner B-1, #14054; first reported as
+ * gilgamesh N2 / steiner N-3 on #14018).
  */
 import { BASE_MAINNET_CAIP2_NETWORK } from '@constants/base'
 import type { Env } from '@/types/env'
+import { networkAllowlist, type NetworkAllowlist } from './networks'
 import { ERPC_TREASURY_BASE } from './x402'
 
 export interface Policy {
@@ -28,8 +35,8 @@ export interface Policy {
   allowedPayTo: string
   maxEurcPerPayment: number
   maxEurcPerDay: number
-  allowedNetworks: string[]
-  allowedAssets: string[]
+  allowedNetworks: NetworkAllowlist
+  allowedAssets: readonly string[]
   allowAnyPayTo: boolean
   maxSlippageBps: number
   maxDeadlineSeconds: number
@@ -48,9 +55,9 @@ export { ERPC_TREASURY_BASE } from './x402'
 export type PolicyViolation =
   | { kind: 'amount_over_per_payment'; limit: number; requested: number }
   | { kind: 'amount_over_daily'; limit: number; spentToday: number; requested: number }
-  | { kind: 'network_not_allowed'; allowed: string[]; requested: string }
-  | { kind: 'asset_not_allowed'; allowed: string[]; requested: string }
-  | { kind: 'payto_not_allowed'; allowed: string[]; requested: string }
+  | { kind: 'network_not_allowed'; allowed: readonly string[]; requested: string }
+  | { kind: 'asset_not_allowed'; allowed: readonly string[]; requested: string }
+  | { kind: 'payto_not_allowed'; allowed: readonly string[]; requested: string }
   | { kind: 'slippage_over_limit'; limit: number; requested: number }
   | { kind: 'deadline_over_limit'; limit: number; requested: number }
   | { kind: 'amount_not_finite'; requested: string }
@@ -73,10 +80,12 @@ export function loadPolicy(env: Env): Policy {
       50,
     ),
     maxEurcPerDay: numberVar('POLICY_MAX_EURC_PER_DAY', env.POLICY_MAX_EURC_PER_DAY, 200),
-    allowedNetworks: listVar('POLICY_ALLOWED_NETWORKS', env.POLICY_ALLOWED_NETWORKS, [
-      BASE_MAINNET_CAIP2_NETWORK,
-      'solana-mainnet',
-    ]),
+    allowedNetworks: networkAllowlist(
+      listVar('POLICY_ALLOWED_NETWORKS', env.POLICY_ALLOWED_NETWORKS, [
+        BASE_MAINNET_CAIP2_NETWORK,
+        'solana-mainnet',
+      ]),
+    ),
     allowedAssets: listVar('POLICY_ALLOWED_ASSETS', env.POLICY_ALLOWED_ASSETS, [
       'EURC',
       'USDC',
@@ -101,8 +110,48 @@ export interface PaymentIntent {
   deadlineSeconds?: number
 }
 
+declare const EFFECTIVE: unique symbol
+
+/**
+ * A policy that has had stored overrides applied to it.
+ *
+ * 🔴 This brand is load-bearing, and it is the THIRD attempt at the same
+ * defect. `policy_set` writing an override that no payment consults was
+ * blocked first by fixing the wiring, then by a test that greps the tool
+ * sources for `loadPolicy(`. Both gates then showed the grep loses:
+ * `(await effectivePolicy(env)).ceiling` reintroduced the exact defect with
+ * 211 tests green (steiner B-6), and so did
+ * `import { loadPolicy as readPolicy }` (gilgamesh R2-N1).
+ *
+ * Text pins lose because they enumerate spellings, and a spelling is free to
+ * invent. A type does not enumerate: `checkPayment` takes a policy that only
+ * `applyOverrides` can produce, so a ceiling that reaches the money path by
+ * being NAMED -- `loadPolicy`, an alias for it, or `.ceiling` off the
+ * composed value -- is a compile error however it is spelled or imported.
+ * Both spellings actually found in the wild are in that set. The grep stays
+ * as a backstop, demoted to what it is.
+ *
+ * 🔴 It is NOT total, and the limit belongs here rather than in a reviewer's
+ * head. `applyOverrides(loadPolicy(env), {})` mints a legitimate brand from a
+ * ceiling using no cast and no banned identifier, and only the backstop grep
+ * stops it (gilgamesh, #14054). An unqualified completeness claim would be
+ * the same defect as the curation docblock that declared a rule the
+ * implementation did not have. `Readonly` additionally closes mutating a
+ * well-obtained effective policy in place -- including
+ * `allowedNetworks.push(...)` and `allowedAssets.push(...)`, which `Readonly`
+ * alone left open because it does not reach into array fields, and which are
+ * exactly the two ceilings `policy_set` refuses to override on the grounds
+ * that they are "to whom and in what" rather than "how much"
+ * (steiner N-16, #14054). Spreading an effective policy into a wider copy
+ * stays reachable, and that is a deliberate act rather than a misspelling.
+ *
+ * This is the same move `lib/settle.ts` made for the settle decision, for the
+ * same stated reason: pinning text is a losing game.
+ */
+export type EffectivePolicyValue = Readonly<Policy> & { readonly [EFFECTIVE]: true }
+
 export function checkPayment(
-  policy: Policy,
+  policy: EffectivePolicyValue,
   intent: PaymentIntent,
   spentTodayEurc: number,
 ): PolicyViolation[] {
@@ -133,10 +182,15 @@ export function checkPayment(
     }
   }
 
-  if (!policy.allowedNetworks.includes(intent.network)) {
+  // 🔴 Through the allowlist's own `allows`. This is the site that made the previous fix
+  // incomplete: normalisation reached plan/swap/bridge but stopped short of
+  // the payment gate, so declaring CAIP-2 canonical opened a NEW trap -- an
+  // operator following the remediation text would see plan and swap say
+  // "allowed" while every Solana 402 was refused here (steiner B-7, #14054).
+  if (!policy.allowedNetworks.allows(intent.network)) {
     violations.push({
       kind: 'network_not_allowed',
-      allowed: policy.allowedNetworks,
+      allowed: policy.allowedNetworks.toJSON(),
       requested: intent.network,
     })
   }

@@ -289,6 +289,45 @@ export class WalletLedger extends DurableObject<Env> {
     return true
   }
 
+  /**
+   * Write a policy override and its audit row, in ONE method.
+   *
+   * 🔴 Must contain no `await`, for the same reason reservePayment must not:
+   * the override and the audit row have to land together. A crash between two
+   * separate calls leaves a tightened ceiling with no record of who tightened
+   * it, or -- worse on a later widening path -- a record with no change.
+   *
+   * The caller has already decided this is a narrowing (see
+   * lib/policyOverride.ts). This method does not re-derive that decision; it
+   * records the one that was made, with the values on both sides so the audit
+   * row is readable without replaying the code.
+   */
+  async setPolicyOverride(input: {
+    name: string
+    value: string
+    from: number
+    actor: string
+    now?: number
+  }): Promise<void> {
+    const now = input.now ?? Date.now()
+    const sql = this.ctx.storage.sql
+
+    sql.exec(
+      `INSERT INTO policy_overrides (name, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(name) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      input.name,
+      input.value,
+      now,
+    )
+    sql.exec(
+      `INSERT INTO audit (at, actor, action, detail) VALUES (?, ?, ?, ?)`,
+      now,
+      input.actor,
+      'policy_set',
+      `${input.name}: ${input.from} -> ${input.value}`,
+    )
+  }
+
   async appendAudit(actor: string, action: string, detail: string): Promise<void> {
     this.ctx.storage.sql.exec(
       `INSERT INTO audit (at, actor, action, detail) VALUES (?, ?, ?, ?)`,

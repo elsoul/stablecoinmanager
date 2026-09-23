@@ -31,9 +31,8 @@ const CATALOG: Array<AssetPreference & { symbol: string }> = [
 /** The catalog, filtered by what the policy currently allows. */
 export function allowedAssetPreferences(policy: Policy): AssetPreference[] {
   const assets = new Set(policy.allowedAssets.map((a) => a.toUpperCase()))
-  const networks = new Set(policy.allowedNetworks)
   return CATALOG.filter(
-    (entry) => assets.has(entry.symbol) && networks.has(entry.network),
+    (entry) => assets.has(entry.symbol) && policy.allowedNetworks.allows(entry.network),
   ).map(({ network, assetAddress, label }) => ({ network, assetAddress, label }))
 }
 

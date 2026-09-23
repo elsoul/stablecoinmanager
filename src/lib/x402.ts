@@ -11,6 +11,7 @@ import {
   BASE_MAINNET_CAIP2_NETWORK,
   ERPC_EURC_BASE_RECEIVING_WALLET,
 } from '@constants/base'
+import { canonicalNetwork } from './networks'
 
 /** The treasury, from the repo's own constant rather than a second copy. */
 export const ERPC_TREASURY_BASE = ERPC_EURC_BASE_RECEIVING_WALLET
@@ -116,7 +117,7 @@ export function selectRequirement(
   for (const preference of preferences) {
     const match = payable.find(
       (r) =>
-        r.network === preference.network &&
+        canonicalNetwork(r.network) === canonicalNetwork(preference.network) &&
         r.asset.toLowerCase() === preference.assetAddress.toLowerCase(),
     )
     if (match) return { chosen: match }

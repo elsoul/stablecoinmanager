@@ -10,6 +10,9 @@ import { x402Inspect, type InspectArgs } from './tools/x402Inspect'
 import { x402Pay, type PayArgs } from './tools/x402Pay'
 import { erpcTopup, type TopupArgs } from './tools/erpcTopup'
 import { history, policyGet, receipt } from './tools/ledgerReads'
+import { plan, type PlanArgs } from './tools/plan'
+import { bridge, swap, type BridgeArgs, type SwapArgs } from './tools/swapBridge'
+import { policySet, type PolicySetArgs } from './tools/policySet'
 import { fail } from './result'
 
 export const mcpRouter = new Hono<AppContext>()
@@ -150,6 +153,16 @@ async function callTool(
         )
       case 'policy_get':
         return text(redact(await policyGet(env), held))
+      case 'plan':
+        return text(redact(await plan(env, input as PlanArgs), held))
+      case 'swap':
+        return text(redact(await swap(env, input as unknown as SwapArgs), held))
+      case 'bridge':
+        return text(redact(await bridge(env, input as unknown as BridgeArgs), held))
+      case 'policy_set':
+        return text(
+          redact(await policySet(env, input as unknown as PolicySetArgs, actor), held),
+        )
       case 'wallet_export_seed':
         // Deliberately NOT redacted: this result is the secret. See the tool.
         return text(await walletExportSeed(env, input as { confirm?: string }, actor))

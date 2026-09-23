@@ -299,8 +299,9 @@ test('every query in the Durable Object prepares against the real schema', () =>
   // statements, so a change in this number is meant to be read and updated
   // deliberately, not to be loosened to `> 0`.
   //
-  // Twelve is the count today.
-  assert.equal(queries.length, 12, 'extractor still finds the DO statements')
+  // 14 as of PR-3, which added setPolicyOverride's two writes. It was 12 in
+  // PR-2, and this guard is what reported the change rather than absorbing it.
+  assert.equal(queries.length, 14, 'extractor still finds the DO statements')
 
   for (const query of queries) {
     // `db.prepare` throws on an unknown table or column, which is exactly the
@@ -392,69 +393,40 @@ test('SOURCE: every exit after the reservation resolves the row', () => {
   )
 })
 
-test("SOURCE: after a signed resend, only a repeated 402 may be called 'failed'", () => {
-  // Once a signed payment has been transmitted, the ledger may claim nothing
-  // happened ONLY with evidence. A resource answering 402 again is that
-  // evidence -- it is still asking, so ours was not consumed. Every other
-  // non-acceptance is `stuck`, which the daily ceiling counts.
+test('SOURCE: x402Pay delegates the post-resend decision, it does not re-derive it', () => {
+  // This replaces a set of textual pins. Three re-introductions of one
+  // fail-open were caught here by pinning shapes (B-2, C-1, O-3), and each
+  // pin only covered the shapes someone had thought of -- O-3 was still open
+  // when PR-2 merged because `if (!accepted)` could be narrowed without
+  // touching any pinned line.
   //
-  // This replaced a rule that keyed on the transaction hash. That rule fixed
-  // "error status WITH a hash" and left its converse open: an ACCEPTED answer
-  // with NO hash -- the ordinary success shape of a generic x402 resource, a
-  // 200 with content and no settle header -- was recorded `failed` and went
-  // uncounted. A successful payment telling the ceiling it never happened is
-  // the same fail-open reached from the other side (steiner, #14018 B-2).
+  // The decision now lives in lib/settle.ts, which node CAN load, and is
+  // swept over its whole input grid there. What remains to check here is only
+  // that this module asks it rather than answering for itself.
   const body = methodBody('x402Pay', 'route/mcp/tools/x402Pay.ts')
   const afterReserve = body.slice(body.indexOf('reservePayment('))
 
   assert.match(
     afterReserve,
-    /const\s+stillAsking\s*=\s*paid\.status\s*===\s*402/,
-    'the refusal branch must decide on a repeated 402',
+    /const outcome = settleOutcome\(\{/,
+    'the outcome comes from the shared decision',
   )
-  assert.match(
-    afterReserve,
-    /const\s+settledStatus\s*=\s*stillAsking\s*\?\s*'failed'\s*:\s*'stuck'/,
-    "and only that case may be 'failed'",
+  assert.match(afterReserve, /if \(!outcome\.accepted\) \{/, 'acceptance is read, not recomputed')
+
+  // No second opinion: the status literals and the accepted-status list must
+  // not reappear in this module.
+  assert.ok(
+    !/\[200,\s*202,\s*409\]/.test(afterReserve),
+    'the accepted-status list must live only in lib/settle.ts',
+  )
+  assert.ok(
+    !/paid\.status === 402/.test(afterReserve),
+    'the repeated-402 test must live only in lib/settle.ts',
   )
 
-  // Acceptance must not require a hash. Requiring one is exactly what routed
-  // the no-hash success into the refusal branch.
-  //
-  // 🔴 ANCHORED to the whole line. The first version matched the expression
-  // unanchored and then ruled out ONE textual shape (`|| !txHash`). Measured
-  // by cyan: appending `&& Boolean(txHash)` re-introduces B-2 and this test
-  // stays green -- the positive match still succeeds and the negative one
-  // does not describe that shape. A guard that runs, names the coverage in
-  // its own comment, and does not have it is worse than an absent one,
-  // because the next reader greps, finds it, and stops looking.
-  assert.match(
-    afterReserve,
-    /^\s*const accepted = \[200, 202, 409\]\.includes\(paid\.status\)\s*$/m,
-    'acceptance is decided by status ALONE -- nothing else on that line',
-  )
-
-  // 409 is the rail's "stuck", so it must not land as `pending`.
-  assert.match(
-    afterReserve,
-    /paidBody\.status === 'stuck' \|\| paid\.status === 409/,
-    "409 settles as stuck, matching the proven client's status map",
-  )
-
-  // Two places may still say 'failed' after the reservation, and they are
-  // named rather than counted: the signing failure, where nothing was ever
-  // transmitted, and the repeated-402 case above. Anything else appearing
-  // here would be a third claim that nothing happened.
-  const signingFailure = /catch \(error\) \{[\s\S]{0,200}?status: 'failed'/
-  assert.match(afterReserve, signingFailure, "the signing failure still writes 'failed'")
-
-  const failedWrites = afterReserve.match(/'failed'/g) ?? []
-  assert.equal(
-    failedWrites.length,
-    2,
-    `'failed' appears ${failedWrites.length} times after the reservation; ` +
-      'expected exactly the signing failure and the repeated-402 case',
-  )
+  // And the ledger writes use it.
+  const writes = afterReserve.match(/status: settledStatus/g) ?? []
+  assert.equal(writes.length, 3, 'both branches settle from the shared outcome, and one reports it')
 })
 
 test('README documents exactly the statuses the ledger can write', () => {
@@ -538,7 +510,14 @@ test('SOURCE: the synchronous grant records its invoice number', () => {
   // does not read it here, the tool's promise to report an invoice number
   // silently fails on the fastest, most ordinary outcome (steiner N-7).
   const body = methodBody('x402Pay', 'route/mcp/tools/x402Pay.ts')
-  const accepted = body.slice(body.indexOf('const accepted ='))
+  // Anchored on a marker that still exists. This slice used to start at
+  // `const accepted =`, which PR-3 renamed when the decision moved into
+  // lib/settle.ts -- indexOf returned -1, slice(-1) returned one character,
+  // and the test failed saying the settle call was missing rather than saying
+  // its anchor was. A slice anchor is a dependency like any other.
+  const anchor = body.indexOf('const outcome = settleOutcome(')
+  assert.notEqual(anchor, -1, 'the shared decision is still where this test looks')
+  const accepted = body.slice(anchor)
 
   // Anchored to the LEDGER WRITE, not to any occurrence after that point.
   // Measured: a first version sliced from `const accepted =` and matched
@@ -619,7 +598,48 @@ test('SOURCE: erpc_topup seeds its invoice number from the payment response', ()
   assert.match(source, /invoiceNumber = checkBody\.invoiceNumber \?\? invoiceNumber/)
 })
 
+// ---------------------------------------------------------------------------
+// PR-3: policy overrides. The override and its audit row must land together,
+// and the same no-await rule applies as for reservePayment.
+// ---------------------------------------------------------------------------
 
+test('SOURCE: setPolicyOverride contains no await', () => {
+  // A crash between two separate calls leaves a changed ceiling with no
+  // record of who changed it. `sql.exec` is synchronous; nothing may suspend
+  // between the override write and the audit write.
+  const body = methodBody('setPolicyOverride')
+  assert.ok(!/\bawait\b/.test(body), 'setPolicyOverride must not suspend')
+  assert.match(body, /INSERT INTO policy_overrides\s*\(/, 'it writes the override')
+  assert.match(body, /INSERT INTO audit\s*\(/, 'and the audit row')
+})
+
+test('the override and its audit row land together, against the real schema', () => {
+  const db = migrated()
+  const source = readFileSync(join(import.meta.dirname, 'walletLedger.ts'), 'utf8')
+  const body = source.slice(source.indexOf('async setPolicyOverride'))
+
+  const upsert = body.match(/`INSERT INTO policy_overrides[\s\S]*?`/)
+  const audit = body.match(/`INSERT INTO audit[\s\S]*?`/)
+  assert.ok(upsert && audit, 'both statements extracted from the real source')
+
+  db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerDay', '20', 1000)
+  db.prepare(audit[0].slice(1, -1)).run(1000, 'f.kawasaki@elsoul.nl', 'policy_set', 'maxEurcPerDay: 200 -> 20')
+
+  const row = db.prepare(`SELECT value FROM policy_overrides WHERE name = 'maxEurcPerDay'`).get()
+  assert.ok(row)
+  assert.equal(row.value, '20')
+
+  const logged = db.prepare(`SELECT action, detail FROM audit`).get()
+  assert.ok(logged)
+  assert.equal(logged.action, 'policy_set')
+  assert.match(String(logged.detail), /200 -> 20/, 'both sides of the change are readable')
+
+  // Upsert, not insert-only: tightening twice must not fail on the primary key.
+  db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerDay', '5', 2000)
+  const again = db.prepare(`SELECT value FROM policy_overrides WHERE name = 'maxEurcPerDay'`).get()
+  assert.ok(again)
+  assert.equal(again.value, '5')
+})
 
 test('SOURCE: a replay reports the prior OUTCOME, not a bare success', () => {
   // B-3 had no control at all. Measured by cyan: replacing

@@ -80,6 +80,37 @@ const RECEIPT_ARGS = z.strictObject({
   idempotencyKey: IDEMPOTENCY_KEY,
 })
 
+const PLAN_ARGS = z.strictObject({
+  fromSymbol: z.string().optional(),
+  toSymbol: z.string().optional(),
+  chainId: z.string().optional(),
+})
+
+const SWAP_ARGS = z.strictObject({
+  fromSymbol: z.string(),
+  toSymbol: z.string(),
+  chainId: z.string(),
+  amountIn: z.string().regex(/^\d+$/, 'atomic units, decimal digits only'),
+  slippageBps: z.number().int().min(0).max(10_000).optional(),
+})
+
+const BRIDGE_ARGS = z.strictObject({
+  fromChainId: z.string(),
+  toChainId: z.string(),
+  amountIn: z.string().regex(/^\d+$/, 'atomic units, decimal digits only'),
+  slippageBps: z.number().int().min(0).max(10_000).optional(),
+})
+
+/**
+ * 🔴 No `assetPreferences`, no `payTo`, no network allow-list here, and
+ * `key` is constrained to the four numeric ceilings. The tool narrows only.
+ * A client that could name the field freely could name `allowedPayTo`.
+ */
+const POLICY_SET_ARGS = z.strictObject({
+  key: z.enum(['maxEurcPerPayment', 'maxEurcPerDay', 'maxSlippageBps', 'maxDeadlineSeconds']),
+  value: z.number().min(0),
+})
+
 function tool(
   name: string,
   description: string,
@@ -133,6 +164,26 @@ export const TOOLS: McpTool[] = [
     'policy_get',
     'The active ceilings, any runtime overrides, and how much of today\'s allowance is left.',
     NO_ARGS,
+  ),
+  tool(
+    'plan',
+    'Say which swaps and bridges are possible TODAY, derived from the SDK catalogue, and name the wishlist item blocking each one that is not. Call this before swap or bridge.',
+    PLAN_ARGS,
+  ),
+  tool(
+    'swap',
+    'Resolve and constrain a swap route on an allowed network. Returns the route, the quote constraints and the policy. Does NOT sign or broadcast: that step is held back until it can be run in production, and the wallet is unfunded.',
+    SWAP_ARGS,
+  ),
+  tool(
+    'bridge',
+    'Confirm whether a bridge between two chains is possible from the SDK capability list. Does NOT sign or broadcast: that step is held back until it can be run in production, and the wallet is unfunded.',
+    BRIDGE_ARGS,
+  ),
+  tool(
+    'policy_set',
+    'TIGHTEN a spending ceiling at runtime, with an audit row. It cannot raise one: the deploy-time value is a hard ceiling and overrides only narrow. Raising a limit requires editing wrangler vars and redeploying.',
+    POLICY_SET_ARGS,
   ),
   tool(
     'wallet_export_seed',

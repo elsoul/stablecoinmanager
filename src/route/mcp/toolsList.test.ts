@@ -4,10 +4,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { advertisedTools, findTool, TOOLS, TOOL_NAMES } from './toolsList.ts'
 
-test('PR-2 ships exactly nine tools', () => {
-  // The count is a contract with the plan's tool table: 3 after PR-1, 9 here,
-  // 13 after PR-3. A tool added without updating the plan trips this.
-  assert.equal(TOOLS.length, 9)
+test('PR-3 ships exactly thirteen tools', () => {
+  // The count is a contract with the plan's tool table: 3 after PR-1, 9 after
+  // PR-2, 13 here. A tool added without updating the plan trips this.
+  assert.equal(TOOLS.length, 13)
   assert.deepEqual(TOOL_NAMES, [
     'wallet_status',
     'holdings',
@@ -17,14 +17,42 @@ test('PR-2 ships exactly nine tools', () => {
     'history',
     'receipt',
     'policy_get',
+    'plan',
+    'swap',
+    'bridge',
+    'policy_set',
     'wallet_export_seed',
   ])
 })
 
-test('PR-3 tools are not exposed yet', () => {
+test('the PR-3 tools are exposed, and wallet_export_seed stays last', () => {
   for (const name of ['plan', 'swap', 'bridge', 'policy_set']) {
-    assert.ok(!TOOL_NAMES.includes(name), `${name} must not be listed in PR-2`)
+    assert.ok(TOOL_NAMES.includes(name), `${name} must be listed in PR-3`)
   }
+  // Ordering is not cosmetic: a model reads tools/list top to bottom, and the
+  // one that reveals the recovery phrase should not sit among the routine
+  // ones. It was last in PR-1 and PR-2; adding four tools must not move it.
+  assert.equal(TOOL_NAMES[TOOL_NAMES.length - 1], 'wallet_export_seed')
+})
+
+test('🔴 swap and bridge advertise that they do not broadcast', () => {
+  // The description is what a model reads to decide what a call will do. These
+  // two resolve routes and stop; saying so in the text is the difference
+  // between a model reporting "prepared" and reporting "sent".
+  for (const name of ['swap', 'bridge']) {
+    const tool = findTool(name)
+    assert.ok(tool, name)
+    assert.match(tool.description, /does NOT sign or broadcast/i, name)
+  }
+})
+
+test('🔴 policy_set advertises that it cannot raise a ceiling', () => {
+  // A model that believes it can widen a limit will try, and the attempt is
+  // the prompt-injection path this design exists to close.
+  const tool = findTool('policy_set')
+  assert.ok(tool)
+  assert.match(tool.description, /cannot raise/i)
+  assert.match(tool.description, /only narrow/i)
 })
 
 test('every money-moving tool requires an idempotency key', () => {
@@ -109,7 +137,11 @@ test('the zod schema never goes on the wire', () => {
 
 test('findTool answers only for listed names', () => {
   assert.ok(findTool('wallet_status'))
-  assert.equal(findTool('swap'), undefined)
+  assert.ok(findTool('swap'), 'swap is listed as of PR-3')
+  // An unlisted name must not resolve. `swap` used to be the example here
+  // because it did not exist yet; a name that becomes real is a weak negative,
+  // so this one is chosen to stay unlisted.
+  assert.equal(findTool('wallet_drain'), undefined)
   assert.equal(findTool(''), undefined)
 })
 

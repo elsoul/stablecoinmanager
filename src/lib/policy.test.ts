@@ -5,16 +5,28 @@ import {
   describeViolation,
   ERPC_TREASURY_BASE,
   loadPolicy,
+  type EffectivePolicyValue,
   type Policy,
   PolicyConfigError,
 } from './policy.ts'
 import type { Env } from '@/types/env'
+import { networkAllowlist } from './networks.ts'
+
+/**
+ * Test-only mint for the effective-policy brand.
+ *
+ * Production has exactly ONE mint (`applyOverrides`), which is what makes a
+ * deploy-time ceiling reaching `checkPayment` a compile error. These unit
+ * tests drive `checkPayment` directly on hand-written policies, so they have
+ * to say so out loud rather than have the barrier quietly not apply.
+ */
+const asEffective = (p: Policy): EffectivePolicyValue => p as EffectivePolicyValue
 
 const POLICY: Policy = {
   allowedPayTo: ERPC_TREASURY_BASE,
   maxEurcPerPayment: 50,
   maxEurcPerDay: 200,
-  allowedNetworks: ['eip155:8453', 'solana-mainnet'],
+  allowedNetworks: networkAllowlist(['eip155:8453', 'solana-mainnet']),
   allowedAssets: ['EURC', 'USDC'],
   allowAnyPayTo: false,
   maxSlippageBps: 50,
@@ -29,14 +41,14 @@ const topup = {
 }
 
 test('the canary payment passes every ceiling', () => {
-  assert.deepEqual(checkPayment(POLICY, topup, 0), [])
+  assert.deepEqual(checkPayment(asEffective(POLICY), topup, 0), [])
 })
 
 test('an absent var uses the documented default', () => {
   const policy = loadPolicy({} as Env)
   assert.equal(policy.maxEurcPerPayment, 50)
   assert.equal(policy.maxEurcPerDay, 200)
-  assert.deepEqual(policy.allowedNetworks, ['eip155:8453', 'solana-mainnet'])
+  assert.deepEqual(policy.allowedNetworks.toJSON(), ['eip155:8453', 'solana-mainnet'])
   assert.deepEqual(policy.allowedAssets, ['EURC', 'USDC'])
   assert.equal(policy.maxSlippageBps, 50)
   assert.equal(policy.maxDeadlineSeconds, 600)
@@ -48,7 +60,7 @@ test('a present but usable var is read', () => {
     POLICY_ALLOWED_NETWORKS: ' eip155:8453 ',
   } as unknown as Env)
   assert.equal(policy.maxEurcPerPayment, 10)
-  assert.deepEqual(policy.allowedNetworks, ['eip155:8453'])
+  assert.deepEqual(policy.allowedNetworks.toJSON(), ['eip155:8453'])
 })
 
 test('a present but UNUSABLE var throws instead of falling back to the wider default', () => {
@@ -89,7 +101,7 @@ test('POLICY_ALLOW_ANY_PAYTO only opens on the exact string "true"', () => {
 
 test('a payment over the per-payment ceiling is refused, not clamped', () => {
   const violations = checkPayment(
-    POLICY,
+    asEffective(POLICY),
     { ...topup, amountEurcEquivalent: '50.01' },
     0,
   )
@@ -99,9 +111,9 @@ test('a payment over the per-payment ceiling is refused, not clamped', () => {
 })
 
 test('the daily ceiling counts what was already spent today', () => {
-  assert.deepEqual(checkPayment(POLICY, { ...topup, amountEurcEquivalent: '40' }, 160), [])
+  assert.deepEqual(checkPayment(asEffective(POLICY), { ...topup, amountEurcEquivalent: '40' }, 160), [])
   const violations = checkPayment(
-    POLICY,
+    asEffective(POLICY),
     { ...topup, amountEurcEquivalent: '40' },
     170,
   )
@@ -112,7 +124,7 @@ test('a non-numeric amount is refused instead of comparing its way through', () 
   // NaN > limit is false, so a missing guard here lets any junk amount pass.
   for (const amount of ['NaN', '', 'abc', '-1', '0', 'Infinity']) {
     const violations = checkPayment(
-      POLICY,
+      asEffective(POLICY),
       { ...topup, amountEurcEquivalent: amount },
       0,
     )
@@ -125,19 +137,19 @@ test('a non-numeric amount is refused instead of comparing its way through', () 
 
 test('an unlisted network or asset is refused', () => {
   assert.equal(
-    checkPayment(POLICY, { ...topup, network: 'eip155:1' }, 0)[0].kind,
+    checkPayment(asEffective(POLICY), { ...topup, network: 'eip155:1' }, 0)[0].kind,
     'network_not_allowed',
   )
   assert.equal(
-    checkPayment(POLICY, { ...topup, asset: 'DAI' }, 0)[0].kind,
+    checkPayment(asEffective(POLICY), { ...topup, asset: 'DAI' }, 0)[0].kind,
     'asset_not_allowed',
   )
 })
 
 test('an asset matches case-insensitively but a payee must match exactly', () => {
-  assert.deepEqual(checkPayment(POLICY, { ...topup, asset: 'eurc' }, 0), [])
+  assert.deepEqual(checkPayment(asEffective(POLICY), { ...topup, asset: 'eurc' }, 0), [])
   const violations = checkPayment(
-    POLICY,
+    asEffective(POLICY),
     { ...topup, payTo: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' },
     0,
   )
@@ -147,7 +159,7 @@ test('an asset matches case-insensitively but a payee must match exactly', () =>
 test('a payee outside the treasury is allowed only when the policy is opened', () => {
   const opened = { ...POLICY, allowAnyPayTo: true }
   assert.deepEqual(
-    checkPayment(opened, { ...topup, payTo: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' }, 0),
+    checkPayment(asEffective(opened), { ...topup, payTo: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef' }, 0),
     [],
   )
 })
@@ -157,12 +169,12 @@ test('a non-finite slippage or deadline is refused, not compared past', () => {
   // arrive from tool arguments, so "not a number" is a shape a caller sends.
   for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -1]) {
     assert.equal(
-      checkPayment(POLICY, { ...topup, slippageBps: bad }, 0)[0]?.kind,
+      checkPayment(asEffective(POLICY), { ...topup, slippageBps: bad }, 0)[0]?.kind,
       'slippage_not_finite',
       `slippageBps ${String(bad)}`,
     )
     assert.equal(
-      checkPayment(POLICY, { ...topup, deadlineSeconds: bad }, 0)[0]?.kind,
+      checkPayment(asEffective(POLICY), { ...topup, deadlineSeconds: bad }, 0)[0]?.kind,
       'deadline_not_finite',
       `deadlineSeconds ${String(bad)}`,
     )
@@ -170,20 +182,20 @@ test('a non-finite slippage or deadline is refused, not compared past', () => {
 })
 
 test('slippage and deadline ceilings are enforced when supplied', () => {
-  assert.deepEqual(checkPayment(POLICY, { ...topup, slippageBps: 50, deadlineSeconds: 600 }, 0), [])
+  assert.deepEqual(checkPayment(asEffective(POLICY), { ...topup, slippageBps: 50, deadlineSeconds: 600 }, 0), [])
   assert.equal(
-    checkPayment(POLICY, { ...topup, slippageBps: 51 }, 0)[0].kind,
+    checkPayment(asEffective(POLICY), { ...topup, slippageBps: 51 }, 0)[0].kind,
     'slippage_over_limit',
   )
   assert.equal(
-    checkPayment(POLICY, { ...topup, deadlineSeconds: 601 }, 0)[0].kind,
+    checkPayment(asEffective(POLICY), { ...topup, deadlineSeconds: 601 }, 0)[0].kind,
     'deadline_over_limit',
   )
 })
 
 test('every violation kind renders a message naming the limit it broke', () => {
   const all = checkPayment(
-    POLICY,
+    asEffective(POLICY),
     {
       amountEurcEquivalent: '999',
       network: 'eip155:1',

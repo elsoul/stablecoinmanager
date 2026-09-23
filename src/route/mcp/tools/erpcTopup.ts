@@ -2,7 +2,7 @@ import type { Env } from '@/types/env'
 import { probe } from '@/chain/x402Client'
 import { BASE_EXPLORER_TX_BASE_URL } from '@constants/base'
 import { topupAssetPreferences } from '@/lib/assets'
-import { loadPolicy } from '@/lib/policy'
+import { effectivePolicy } from '../policyFor'
 import { LEDGER_INSTANCE_NAME, type WalletLedger } from '@/do/walletLedger'
 import { fail, ok, type ToolResult } from '../result'
 import { x402Pay } from './x402Pay'
@@ -61,7 +61,7 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   // EURC only, regardless of what the policy allows for generic payments.
   // See lib/assets.ts:topupAssetPreferences -- the ruling lives in
   // constants/base.ts, not here.
-  const preferences = topupAssetPreferences(loadPolicy(env))
+  const preferences = topupAssetPreferences((await effectivePolicy(env)).effective)
   if (preferences.length === 0) {
     return fail({}, [
       'Allow EURC and eip155:8453 in POLICY_ALLOWED_ASSETS / POLICY_ALLOWED_NETWORKS.',

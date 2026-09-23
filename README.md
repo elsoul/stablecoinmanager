@@ -35,8 +35,8 @@ description does not land on main: this repository squashes with
 |---|---|
 | PR-0 | `deno/api/auth-api` seeded OAuth client (merged separately) |
 | PR-1 | scaffold, OAuth 2.1 AS, Google login via auth-api, wallet derivation, `wallet_status` / `holdings` / `wallet_export_seed`, `WalletLedger` DO schema |
-| **PR-2 (this)** | `x402_inspect` / `x402_pay` / `erpc_topup` / `history` / `receipt` / `policy_get` |
-| PR-3 | `plan` / `swap` / `bridge` / `policy_set` |
+| PR-2 | `x402_inspect` / `x402_pay` / `erpc_topup` / `history` / `receipt` / `policy_get` |
+| **PR-3 (this)** | `plan` / `swap` / `bridge` / `policy_set` |
 
 Plan and acceptance criteria: `docs/superpowers/plans/2026-09-21-stablecoin-manager-mcp.md`.
 
@@ -162,9 +162,16 @@ public BIP-44 EVM vectors.
 ## Safety valve: ceilings, not prompts
 
 The point of this worker is to pay without asking a human first, so the brake
-is a ceiling rather than an approval dialog. Defaults, set by `POLICY_*` vars and read back with `policy_get`. Changing
-them today means editing the vars and redeploying -- the `policy_set` tool that
-writes a runtime override with an audit row is PR-3 and does **not** exist yet:
+is a ceiling rather than an approval dialog. Defaults are set by `POLICY_*`
+vars and read back with `policy_get`, which reports the effective values and
+the deploy-time ceiling side by side.
+
+`policy_set` writes a runtime override with an audit row, and it can only
+TIGHTEN: the comparison is against the deploy-time ceiling, so a narrowed
+limit can be relaxed back to -- never past -- the value an operator approved.
+Raising a ceiling still means editing the vars and redeploying, which needs
+different credentials and leaves a diff. Networks, assets and the payee are
+deploy-time only; they are not "how much" but "to whom and in what".
 
 | | |
 |---|---|

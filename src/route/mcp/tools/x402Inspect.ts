@@ -1,6 +1,6 @@
 import type { Env } from '@/types/env'
 import { deriveAddresses } from '@/wallet/keys'
-import { loadPolicy } from '@/lib/policy'
+import { effectivePolicy } from '../policyFor'
 import {
   atomicToDecimal,
   extraKeyDrift,
@@ -31,7 +31,10 @@ export interface InspectArgs {
  */
 export async function x402Inspect(env: Env, args: InspectArgs): Promise<ToolResult> {
   const addresses = deriveAddresses(env.WALLET_MNEMONIC ?? '')
-  const policy = loadPolicy(env)
+  // EFFECTIVE: this tool tells the caller whether a 402 is payable, and
+  // answering from the ceiling would say yes to an amount the payment check
+  // then refuses.
+  const { effective: policy } = await effectivePolicy(env)
 
   const first = await probe(args.url, {
     method: args.method,

@@ -7,6 +7,7 @@ import {
   unsupportedYet,
 } from '@/chain/gateway'
 import { formatAtomic, ok, type ToolResult } from '../result'
+import { canonicalNetwork, SOLANA_MAINNET_CAIP2 } from '@/lib/networks'
 
 interface HoldingEntry {
   network: string
@@ -33,7 +34,11 @@ export async function holdings(
   const unsupported: unknown[] = []
 
   for (const network of requested) {
-    if (network === BASE_NETWORK) {
+    // Canonical for the dispatch, raw for what we echo back: the caller asked
+    // in their own spelling and should see it, but which RPC answers must not
+    // depend on which of two names for one chain they happened to use.
+    const chain = canonicalNetwork(network)
+    if (chain === canonicalNetwork(BASE_NETWORK)) {
       // Named explicitly rather than omitted: an agent that asked about Base
       // must be told the SDK cannot read it yet, not handed an empty list it
       // would read as "zero balance".
@@ -42,7 +47,7 @@ export async function holdings(
     }
 
     try {
-      if (network === 'solana-mainnet') {
+      if (chain === SOLANA_MAINNET_CAIP2) {
         const lamports = await erpc.solana.rpc
           .getBalance(addresses.solana)
           .send()
@@ -55,8 +60,8 @@ export async function holdings(
           human: formatAtomic(value, 9),
           currency: 'SOL',
         })
-      } else if (network === 'eip155:1' || network === 'eip155:43114') {
-        const namespace = network === 'eip155:1' ? erpc.ethereum : erpc.avalanche
+      } else if (chain === 'eip155:1' || chain === 'eip155:43114') {
+        const namespace = chain === 'eip155:1' ? erpc.ethereum : erpc.avalanche
         const hex = await namespace.rpc
           .eth_getBalance(addresses.evm, 'latest')
           .send()
@@ -64,10 +69,10 @@ export async function holdings(
         entries.push({
           network,
           address: addresses.evm,
-          asset: network === 'eip155:1' ? 'ETH' : 'AVAX',
+          asset: chain === 'eip155:1' ? 'ETH' : 'AVAX',
           atomic: value,
           human: formatAtomic(value, 18),
-          currency: network === 'eip155:1' ? 'ETH' : 'AVAX',
+          currency: chain === 'eip155:1' ? 'ETH' : 'AVAX',
         })
       } else {
         warnings.push(`${network} is not a network this worker can read.`)

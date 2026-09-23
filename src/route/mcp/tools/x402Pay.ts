@@ -1,6 +1,7 @@
 import type { Env } from '@/types/env'
 import { deriveAddresses, deriveEvmAccount } from '@/wallet/keys'
-import { checkPayment, describeViolation, loadPolicy } from '@/lib/policy'
+import { checkPayment, describeViolation } from '@/lib/policy'
+import { effectivePolicy } from '../policyFor'
 import {
   allowedAssetPreferences,
   ASSET_DECIMALS,
@@ -12,7 +13,9 @@ import { BASE_EXPLORER_TX_BASE_URL } from '@constants/base'
 import { atomicToDecimal, normalizeAccepts, selectRequirement } from '@/lib/x402'
 import { probe, readSettle, signPayment } from '@/chain/x402Client'
 import { LEDGER_INSTANCE_NAME, type WalletLedger } from '@/do/walletLedger'
+import { settleOutcome } from '@/lib/settle'
 import { fail, ok, type ToolResult } from '../result'
+import { canonicalNetwork } from '@/lib/networks'
 
 export interface PayArgs {
   url: string
@@ -51,7 +54,10 @@ export interface PayArgs {
  */
 export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   const addresses = deriveAddresses(env.WALLET_MNEMONIC ?? '')
-  const policy = loadPolicy(env)
+  // 🔴 EFFECTIVE, not the deploy-time ceiling. A stored override that
+  // tightens a limit has to bind here or `policy_set` is decorative in the
+  // only place it matters (gilgamesh B1, #14054).
+  const { effective: policy } = await effectivePolicy(env)
   const ledger = env.WALLET_LEDGER.get(
     env.WALLET_LEDGER.idFromName(LEDGER_INSTANCE_NAME),
   ) as unknown as WalletLedger
@@ -127,7 +133,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   if (violations.length > 0) {
     return fail(
       { requirement: chosen, violations },
-      ['Pay a smaller amount; raising the ceiling needs a redeploy (there is no policy_set yet).'],
+      ['Pay a smaller amount. policy_set can only TIGHTEN a ceiling; raising one needs a redeploy.'],
       violations.map(describeViolation),
     )
   }
@@ -246,11 +252,19 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // that tells the ceiling it never happened is the same fail-open as
   // excluding `stuck`, reached from the other side (steiner, #14018 B-2).
   // ---------------------------------------------------------------------
-  const accepted = [200, 202, 409].includes(paid.status)
+  // 🔴 ONE decision, computed once, in a module that can be executed under
+  // `node --test`. Three separate re-introductions of the same fail-open were
+  // caught here by source-shape pins (B-2, C-1, O-3); lib/settle.ts replaces
+  // those pins with a swept input grid. Nothing below re-derives acceptance.
+  const outcome = settleOutcome({
+    httpStatus: paid.status,
+    bodyStatus: paidBody.status,
+    txHash,
+  })
 
-  if (!accepted) {
-    const stillAsking = paid.status === 402
-    const settledStatus = stillAsking ? 'failed' : 'stuck'
+  if (!outcome.accepted) {
+    const stillAsking = outcome.stillAsking
+    const settledStatus = outcome.status
     await ledger.settlePayment({
       idempotencyKey: args.idempotencyKey,
       status: settledStatus,
@@ -277,13 +291,8 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     )
   }
 
-  // Accepted. A hash is a better receipt, not a precondition -- requiring one
-  // is what put the no-hash success into the refusal branch above.
-  const settledStatus = paidBody.status === 'granted'
-    ? 'settled'
-    : paidBody.status === 'stuck' || paid.status === 409
-    ? 'stuck'
-    : 'pending'
+  // Accepted. The status comes from the same decision as the refusal above.
+  const settledStatus = outcome.status
   // The invoice number is read HERE, on the synchronous path, and not only by
   // the top-up poller. The rail answers a re-sent payment with 200 +
   // status:'granted' + invoiceNumber when the grant completes inline; that
@@ -319,7 +328,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
       network: chosen.network,
       payTo: chosen.payTo,
       payer: signed.from ?? addresses.evm,
-      explorer: chosen.network === BASE_NETWORK
+      explorer: canonicalNetwork(chosen.network) === canonicalNetwork(BASE_NETWORK)
         ? `${BASE_EXPLORER_TX_BASE_URL}${txHash}`
         : undefined,
       body: paid.body,
