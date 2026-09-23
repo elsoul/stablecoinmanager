@@ -46,7 +46,14 @@ export type ErpcClient = ReturnType<typeof createErpcClient>
 
 export function createGateway(env: Env): ErpcClient {
   if (!env.ERPC_API_KEY) throw new ErpcApiKeyMissingError()
-  return createErpcClient({ apiKey: env.ERPC_API_KEY })
+  return createErpcClient({
+    apiKey: env.ERPC_API_KEY,
+    // Always pass a wrapper. Left to itself, SDK 0.8.0 stores `globalThis.fetch`
+    // and calls it as `this.#fetch(...)`; workerd rejects that as an "Illegal
+    // invocation" and the SDK reports it as "Unable to reach ERPC", so no chain
+    // is ever reached in production. Guarded by gateway.test.ts.
+    fetch: (input, init) => fetch(input, init),
+  })
 }
 
 export interface Reachability {
