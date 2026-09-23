@@ -9,6 +9,7 @@
  */
 import {
   checkPayment,
+  describeViolation,
   type EffectivePolicyValue,
   type PaymentIntent,
   type Policy,
@@ -147,6 +148,37 @@ export function refuseEverything(): EffectivePolicyValue {
     },
     [],
   )
+}
+
+/**
+ * Every reason a refusal carries, as prose, for both refusing outcomes.
+ *
+ * 🔴 It is a FUNCTION rather than two expressions at the call sites because
+ * the pin on "both branches name every cause" was a grep for
+ * `describeViolation`, and a grep is satisfied by a branch that computes the
+ * list and drops it. Measured: deleting the `...others` spread while leaving
+ * the computation left 247 pass / 0 fail (cyan N-1, #14074) -- the same
+ * "text pins lose" shape this package demoted its other greps for.
+ *
+ * Now the list is built where node can drive it, so a branch that stops
+ * naming a cause has to change tested code.
+ *
+ * Order: the daily line first when there is one, because its guidance is
+ * specific ("wait for the UTC day to roll over"), then the rest. A caller
+ * that fixes only what the first line names and retries learns nothing the
+ * second time if the rest were dropped.
+ */
+export function refusalReasons(
+  outcome: Extract<ReserveOutcome, { kind: 'over_daily_ceiling' } | { kind: 'policy_violation' }>,
+): string[] {
+  if (outcome.kind === 'policy_violation') return outcome.violations.map(describeViolation)
+  const daily =
+    `today's total would reach ${outcome.spentTodayEurc + outcome.requestedEurc} EURC, ` +
+    `over the ${outcome.limitEurc} EURC daily ceiling; nothing was signed`
+  return [
+    daily,
+    ...outcome.violations.filter((v) => v.kind !== 'amount_over_daily').map(describeViolation),
+  ]
 }
 
 export function reserveDecision(input: {

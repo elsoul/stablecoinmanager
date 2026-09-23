@@ -4,12 +4,18 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   OVERRIDE_ROWS_SQL,
+  refusalReasons,
   policyFromOverrideRows,
   refuseEverything,
   reserveDecision,
 } from './reserve.ts'
 import { atomicToDecimal } from './x402.ts'
-import { ERPC_TREASURY_BASE, loadPolicy, type Policy } from './policy.ts'
+import {
+  ERPC_TREASURY_BASE,
+  loadPolicy,
+  type Policy,
+  type PolicyViolation,
+} from './policy.ts'
 import { networkAllowlist } from './networks.ts'
 
 // ---------------------------------------------------------------------------
@@ -448,5 +454,46 @@ test('a daily refusal carries every violation, not only the daily one', () => {
   assert.deepEqual(
     onlyDaily.kind === 'over_daily_ceiling' ? onlyDaily.violations.map((v) => v.kind) : [],
     ['amount_over_daily'],
+  )
+})
+
+test('a refusal names every cause it was handed, daily first', () => {
+  // cyan N-1. The prose is built here, where node can drive it, because the
+  // pin at the call site was a grep and a grep cannot tell "computed the
+  // list" from "computed the list and used it".
+  const violations: PolicyViolation[] = [
+    { kind: 'amount_over_daily', limit: 1, spentToday: 0, requested: 40 },
+    { kind: 'network_not_allowed', allowed: ['eip155:8453'], requested: 'eip155:1' },
+    { kind: 'asset_not_allowed', allowed: ['EURC'], requested: 'DAI' },
+  ]
+
+  const daily = refusalReasons({
+    kind: 'over_daily_ceiling',
+    spentTodayEurc: 0,
+    limitEurc: 1,
+    requestedEurc: 40,
+    violations,
+  })
+  assert.equal(daily.length, 3, `every cause must appear: ${JSON.stringify(daily)}`)
+  assert.match(daily[0] ?? '', /daily ceiling/, 'the daily line comes first')
+  assert.ok(daily.some((line) => line.includes('eip155:1')), 'the network cause must survive')
+  assert.ok(daily.some((line) => line.includes('DAI')), 'and the asset cause')
+  // The daily violation is not printed twice -- once as the headline, once
+  // from the list.
+  assert.equal(daily.filter((line) => /daily/i.test(line)).length, 1)
+
+  // The sibling outcome names all of them with no headline.
+  const other = refusalReasons({ kind: 'policy_violation', violations })
+  assert.equal(other.length, 3)
+  assert.ok(other.some((line) => line.includes('eip155:1')))
+
+  // Control: one cause in, one line out -- so the counts above are not
+  // satisfied by a function that always returns three.
+  assert.equal(
+    refusalReasons({
+      kind: 'policy_violation',
+      violations: [violations[1] as PolicyViolation],
+    }).length,
+    1,
   )
 })

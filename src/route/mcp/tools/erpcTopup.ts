@@ -65,9 +65,17 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   // 🔴 This is the SECOND policy read of a top-up: x402Pay reads again, and
   // the ledger composes a third time inside the reservation. The duplication
   // was raised as waste (steiner N-13, #14054) and is kept deliberately --
-  // handing this value down to x402Pay is precisely the stale-policy shape
-  // PR-4 removed. This read only decides whether to refuse EARLY with
-  // top-up-specific guidance; nothing downstream trusts it.
+  // re-reading is what makes the ledger's copy fresh, which is the stale-policy
+  // shape PR-4 removed.
+  //
+  // 🔴 Precisely: the preferences derived here ARE handed down, as
+  // `assetPreferences` to x402Pay, so "nothing downstream trusts it" -- an
+  // earlier wording of this comment -- was looser than the code (cyan N-2,
+  // #14074). What is not trusted downstream is this read as a CEILING:
+  // x402Pay reads the policy again for its own check, and the ledger composes
+  // it a third time inside the reservation turn. The preferences only order
+  // which payable requirement is chosen, and every ceiling that decision has
+  // to clear is re-derived after it.
   const preferences = topupAssetPreferences((await effectivePolicy(env)).effective)
   if (preferences.length === 0) {
     return fail({}, [

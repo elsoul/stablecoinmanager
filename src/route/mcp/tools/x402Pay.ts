@@ -1,6 +1,7 @@
 import type { Env } from '@/types/env'
 import { deriveAddresses, deriveEvmSigner } from '@/wallet/keys'
 import { checkPayment, describeViolation } from '@/lib/policy'
+import { refusalFor } from '../refusal'
 import { effectivePolicy } from '../policyFor'
 import {
   allowedAssetPreferences,
@@ -161,35 +162,16 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     ])
   }
   if (reservation.kind === 'over_daily_ceiling') {
-    // 🔴 The daily line FIRST, because its guidance is specific, then every
-    // other reason. Carrying the full list in the data and naming one cause
-    // in the prose is how a caller fixes what the message said and finds the
-    // payment still refused (steiner N-6 closed the data, N-1 the prose,
-    // #14074). The sibling branch below already did it this way; one module
-    // with two habits is the asymmetry, not the wording.
-    const others = reservation.violations
-      .filter((v) => v.kind !== 'amount_over_daily')
-      .map(describeViolation)
-    return fail(
-      { reservation },
-      ['Wait for the UTC day to roll over, or raise POLICY_MAX_EURC_PER_DAY.'],
-      [
-        `today's total would reach ${
-          reservation.spentTodayEurc + reservation.requestedEurc
-        } EURC, over the ${reservation.limitEurc} EURC daily ceiling; nothing was signed`,
-        ...others,
-      ],
-    )
+    // The whole refusal comes from one place, tested end to end. Assembling
+    // it here again is what let a branch truncate the reasons it asked for
+    // (cyan, #14077). See route/mcp/refusal.ts.
+    return refusalFor(reservation, chosen)
   }
   if (reservation.kind === 'policy_violation') {
     // The ledger refused on a policy that changed while this request was in
     // flight. Nothing was signed: the refusal happens before the row is
     // inserted.
-    return fail(
-      { requirement: chosen, violations: reservation.violations },
-      ['policy_get will show the ceilings now in force; they may have been tightened mid-request.'],
-      reservation.violations.map(describeViolation),
-    )
+    return refusalFor(reservation, chosen)
   }
   if (reservation.kind === 'amount_not_finite') {
     return fail({ reservation }, [], ['the quoted amount is not a usable number'])
