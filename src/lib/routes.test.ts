@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { catalogPools, catalogTokens } from '@/chain/catalog'
 import {
   QUOTABLE_ADAPTERS,
   routableSwaps,
@@ -31,7 +32,10 @@ const TOKENS: TokenRow[] = [
 ]
 
 const pool = (over: Partial<PoolRow>): PoolRow => ({
-  poolDefinitionId: 'p',
+  // Curated form on purpose. A fixture id outside `pool-<n>` is dropped by
+  // the pool allowlist, which would make every positive case below vacuous --
+  // the same trap the token fixtures hit when curation landed (#14054 B-2).
+  poolDefinitionId: 'pool-0001',
   chainId: 'eip155:1',
   token0DeploymentId: 'deployment-0008',
   token1DeploymentId: 'deployment-0002',
@@ -149,4 +153,36 @@ test('the quotable-adapter list is a list, not a wildcard', () => {
   // automatic inclusion: the whole module exists to refuse what it cannot
   // actually quote.
   assert.deepEqual([...QUOTABLE_ADAPTERS], ['evm-constant-product-v2'])
+})
+
+test('🔴 a discovered POOL is not routable, even between two curated tokens', () => {
+  // steiner N-10. Curating both tokens said nothing about the pool joining
+  // them. Measured on the shipped catalogue before this rule: 12 routes
+  // survived token curation and 8 of them ran through a `discovered-pool-*`.
+  // Two reviewed tokens joined by an unreviewed pool is a different claim
+  // from "this pair is fine".
+  const curated = routableSwaps(TOKENS, [pool({ poolDefinitionId: 'pool-0007' })])
+  assert.equal(curated.length, 2, 'control: a curated pool yields both directions')
+
+  for (const id of ['discovered-pool-0007', 'pool-abc', 'POOL-0007', 'pool-', 'x-pool-0007']) {
+    assert.deepEqual(
+      routableSwaps(TOKENS, [pool({ poolDefinitionId: id })]),
+      [],
+      `${id} must not be routable`,
+    )
+  }
+})
+
+test('REACH: the shipped catalogue loses exactly its discovered pools', () => {
+  // Driven against the real SDK, because the fixture above cannot show that
+  // the rule matches the catalogue's actual id shapes.
+  const routes = routableSwaps(catalogTokens(), catalogPools())
+  assert.ok(routes.length > 0, 'the catalogue must still route something')
+  assert.deepEqual(
+    routes.filter((r) => !/^pool-\d+$/.test(r.poolDefinitionId)),
+    [],
+    'no surviving route may run through a discovered pool',
+  )
+  // Recorded, not asserted as a floor: 4 today, all on named pairs.
+  assert.equal(routes.length, 4, 'a change here is meant to be read')
 })

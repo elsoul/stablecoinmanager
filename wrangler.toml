@@ -31,13 +31,23 @@ AUTH_API_CLIENT_ID = "mcp-stablecoin-manager"
 ALLOWED_GOOGLE_EMAILS = "f.kawasaki@elsoul.nl"
 JWT_EXPIRES_IN = "3600"
 X402_HOST = "https://x402.erpc.global"
-# Policy ceilings. Set here, per deploy, and these values are what applies.
+# Policy ceilings. Set here, per deploy. These are the DEPLOY-TIME ceiling.
 #
-# There is no runtime override yet. The ledger HAS a `policy_overrides` table
-# and `policy_get` reports its rows, but `loadPolicy` does not read them and
-# no tool writes them -- both halves are PR-3. Until then, changing a ceiling
-# means editing this file and redeploying, which writes nothing to the Durable
-# Object and leaves no audit row: the record of the change is the commit.
+# Runtime overrides exist as of PR-3 and may only TIGHTEN: `policy_set` writes
+# a row with an audit entry, and the ledger composes it onto these values
+# inside the same turn as each reservation. Raising a ceiling still means
+# editing this file and redeploying -- different credentials, and it leaves a
+# diff. The earlier version of this comment said no runtime override existed;
+# that was true when it was written and stopped being true in PR-3
+# (steiner N-2, #14067).
+#
+# 🔴 EVERY VALUE BELOW IS IDENTICAL TO THE BUILT-IN DEFAULT in lib/policy.ts.
+# That is why "deploy, then exercise the happy path once" cannot tell you
+# whether the worker is reading this file at all: an absent var does not
+# throw, it falls back, and it falls back to exactly these numbers. If you
+# need to know the Durable Object is reading [vars], change one of them to a
+# value that differs from its default and observe the refusal boundary.
+# `lib/reserve.test.ts` pins the equality, so the day one differs, it reddens.
 POLICY_MAX_EURC_PER_PAYMENT = "50"
 POLICY_MAX_EURC_PER_DAY = "200"
 POLICY_ALLOWED_NETWORKS = "eip155:8453,solana-mainnet"

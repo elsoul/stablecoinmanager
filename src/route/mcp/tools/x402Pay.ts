@@ -161,6 +161,15 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     ])
   }
   if (reservation.kind === 'over_daily_ceiling') {
+    // 🔴 The daily line FIRST, because its guidance is specific, then every
+    // other reason. Carrying the full list in the data and naming one cause
+    // in the prose is how a caller fixes what the message said and finds the
+    // payment still refused (steiner N-6 closed the data, N-1 the prose,
+    // #14074). The sibling branch below already did it this way; one module
+    // with two habits is the asymmetry, not the wording.
+    const others = reservation.violations
+      .filter((v) => v.kind !== 'amount_over_daily')
+      .map(describeViolation)
     return fail(
       { reservation },
       ['Wait for the UTC day to roll over, or raise POLICY_MAX_EURC_PER_DAY.'],
@@ -168,6 +177,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
         `today's total would reach ${
           reservation.spentTodayEurc + reservation.requestedEurc
         } EURC, over the ${reservation.limitEurc} EURC daily ceiling; nothing was signed`,
+        ...others,
       ],
     )
   }

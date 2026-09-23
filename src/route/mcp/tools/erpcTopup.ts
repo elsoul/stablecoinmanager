@@ -61,6 +61,13 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   // EURC only, regardless of what the policy allows for generic payments.
   // See lib/assets.ts:topupAssetPreferences -- the ruling lives in
   // constants/base.ts, not here.
+  //
+  // 🔴 This is the SECOND policy read of a top-up: x402Pay reads again, and
+  // the ledger composes a third time inside the reservation. The duplication
+  // was raised as waste (steiner N-13, #14054) and is kept deliberately --
+  // handing this value down to x402Pay is precisely the stale-policy shape
+  // PR-4 removed. This read only decides whether to refuse EARLY with
+  // top-up-specific guidance; nothing downstream trusts it.
   const preferences = topupAssetPreferences((await effectivePolicy(env)).effective)
   if (preferences.length === 0) {
     return fail({}, [

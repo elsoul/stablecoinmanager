@@ -395,3 +395,58 @@ test('loadPolicy defaults on ABSENT and throws on PRESENT-BUT-UNUSABLE', () => {
     )
   }
 })
+
+test('a daily refusal carries every violation, not only the daily one', () => {
+  // steiner N-6. The daily outcome kept its own shape because the caller's
+  // guidance for it is specific, and in doing so it dropped the rest. A
+  // payment over the daily ceiling AND on a disallowed network reported only
+  // the first, so fixing what the message named left the payment refused for
+  // a reason the caller was never told.
+  const tight = policyFromOverrideRows({ ...CEILING, maxEurcPerDay: 1 }, [])
+  const out = reserveDecision({
+    existing: undefined,
+    spentTodayEurc: 0,
+    policy: tight,
+    intent: {
+      amountEurcEquivalent: '40',
+      network: 'eip155:1',
+      asset: 'DAI',
+      payTo: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      deadlineSeconds: 999999,
+    },
+  })
+
+  assert.equal(out.kind, 'over_daily_ceiling', 'the daily outcome still wins the shape')
+  if (out.kind !== 'over_daily_ceiling') return
+
+  // The numbers the caller prints are unchanged.
+  assert.equal(out.limitEurc, 1)
+  assert.equal(out.requestedEurc, 40)
+
+  // And every other reason travels with it.
+  const kinds = out.violations.map((v) => v.kind).sort()
+  // Measured, not assumed: 40 is under the per-payment ceiling of 50, so
+  // that one is absent. The list is what was found.
+  assert.deepEqual(kinds, [
+    'amount_over_daily',
+    'asset_not_allowed',
+    'deadline_over_limit',
+    'network_not_allowed',
+    'payto_not_allowed',
+  ])
+
+  // Control: a payment that only breaches the daily ceiling carries one.
+  const onlyDaily = reserveDecision({
+    existing: undefined,
+    spentTodayEurc: 0,
+    policy: tight,
+    intent: { ...INTENT, amountEurcEquivalent: '40' },
+  })
+  assert.equal(onlyDaily.kind, 'over_daily_ceiling')
+  // 40 is under the per-payment ceiling of 50, so the daily one is the only
+  // breach -- which is the point: the list is what was found, not a fixed set.
+  assert.deepEqual(
+    onlyDaily.kind === 'over_daily_ceiling' ? onlyDaily.violations.map((v) => v.kind) : [],
+    ['amount_over_daily'],
+  )
+})

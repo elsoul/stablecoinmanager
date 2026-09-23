@@ -114,6 +114,13 @@ export function selectRequirement(
         : `none of the ${requirements.length} requirement(s) can be signed by this worker`,
     }
   }
+  // 🔴 The canonicalisation here is a NO-OP today, and stays anyway.
+  // `normalizeAccepts` marks anything outside `eip155:*` unpayable before
+  // this runs, and eip155 ids have one spelling, so no alias can reach the
+  // comparison (steiner N-18, #14054). It is here because the alternative --
+  // one comparison in this file spelled differently from the six others --
+  // is how the vocabulary split got in the first place. Recorded rather than
+  // removed, so the next reader knows it was measured and not cargo.
   for (const preference of preferences) {
     const match = payable.find(
       (r) =>

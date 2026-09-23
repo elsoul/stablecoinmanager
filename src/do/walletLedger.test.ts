@@ -830,3 +830,30 @@ test('SOURCE: the status x402_pay reports is the status it wrote', () => {
     'the reported status must not be recomputed from the body',
   )
 })
+
+test('SOURCE: both refusal branches name every cause, not just their own', () => {
+  // steiner N-1. N-6 closed the DATA -- `over_daily_ceiling` carries the full
+  // violation list -- and left the PROSE naming one cause. The sibling
+  // branch, `policy_violation`, already mapped every violation into warnings.
+  // One module with two habits is the asymmetry; the wording is downstream of
+  // it. A caller that fixes what the message named and finds the payment
+  // still refused learns nothing from the second attempt either.
+  const source = readFileSync(
+    join(import.meta.dirname, '..', 'route', 'mcp', 'tools', 'x402Pay.ts'),
+    'utf8',
+  )
+  const branch = (kind: string): string => {
+    const start = source.indexOf(`reservation.kind === '${kind}'`)
+    assert.notEqual(start, -1, `${kind} branch not found`)
+    const end = source.indexOf('\n  }', start)
+    return source.slice(start, end)
+  }
+
+  for (const kind of ['over_daily_ceiling', 'policy_violation']) {
+    assert.match(
+      branch(kind),
+      /describeViolation/,
+      `the ${kind} branch must describe the violations it was handed`,
+    )
+  }
+})

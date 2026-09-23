@@ -109,6 +109,24 @@ function isCurated(token: TokenRow | undefined): boolean {
   return token !== undefined && CURATED_DEPLOYMENT_ID.test(token.deploymentId)
 }
 
+/**
+ * The same question about the POOL.
+ *
+ * 🔴 Curating both tokens said nothing about the pool that joins them.
+ * Measured on the shipped catalogue: 12 routes survived token curation and
+ * **8 of them ran through a `discovered-pool-*`** -- two reviewed tokens
+ * joined by a pool nobody reviewed, which is a different claim from "this
+ * pair is fine" (steiner N-10, #14054).
+ *
+ * The id shapes are `pool-<n>` and `discovered-pool-<n>`, and the allowlist
+ * is positive for the reason the token one is: a catalogue that renames its
+ * discovered entries is then excluded by default rather than admitted.
+ *
+ * Effect, measured: 12 routes -> 4, all four on named pairs
+ * (USDC/WETH on Ethereum, WAVAX/USDC on Avalanche).
+ */
+const CURATED_POOL_ID = /^pool-\d+$/
+
 export const QUOTABLE_ADAPTERS = ['evm-constant-product-v2'] as const
 
 export function routableSwaps(
@@ -120,6 +138,7 @@ export function routableSwaps(
 
   for (const pool of pools) {
     if (pool.status !== 'active') continue
+    if (!CURATED_POOL_ID.test(pool.poolDefinitionId)) continue
     if (!isCurated(byId.get(pool.token0DeploymentId))) continue
     if (!isCurated(byId.get(pool.token1DeploymentId))) continue
     if (!(QUOTABLE_ADAPTERS as readonly string[]).includes(pool.adapterKind)) continue

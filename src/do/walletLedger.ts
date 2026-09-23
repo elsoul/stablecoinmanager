@@ -229,10 +229,13 @@ export class WalletLedger extends DurableObject<Env> {
    * for a refusal that would not come (cyan B-2/B-3, #14067). The executable
    * form of both facts is in `lib/reserve.test.ts`.
    *
-   * The `try` also spans the SELECT, but nothing else here throws:
+   * The `try` also spans the SELECT, but nothing else on this path throws:
    * `policy_overrides` is created in the constructor's
-   * `blockConcurrencyWhile`, and neither `effectivePolicy.ts` nor
-   * `policyOverride.ts` contains a `throw`.
+   * `blockConcurrencyWhile`, and none of the three modules the call reaches
+   * -- `lib/reserve.ts` (`policyFromLedger`, `policyFromOverrideRows`),
+   * `lib/effectivePolicy.ts`, `lib/policyOverride.ts` -- contains an
+   * executable `throw` (cyan N-4, #14067: the earlier list named two of the
+   * three, and the one it omitted is the entry point).
    */
   private effectivePolicy(sql: SqlStorage): EffectivePolicyValue {
     try {

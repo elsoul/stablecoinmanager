@@ -35,7 +35,21 @@ export type ReserveOutcome =
    * tool call safe.
    */
   | { kind: 'replay'; row: PaymentRow }
-  | { kind: 'over_daily_ceiling'; spentTodayEurc: number; limitEurc: number; requestedEurc: number }
+  | {
+    kind: 'over_daily_ceiling'
+    spentTodayEurc: number
+    limitEurc: number
+    requestedEurc: number
+    /**
+     * Every violation found, not just the daily one. The caller prints the
+     * daily numbers because its guidance for them is specific, but a payment
+     * that is over the daily ceiling AND on a disallowed network used to
+     * report only the first -- so fixing what the message named left the
+     * payment still refused, for a reason the caller was never told
+     * (steiner N-6, #14067).
+     */
+    violations: PolicyViolation[]
+  }
   | { kind: 'amount_not_finite'; requestedEurc: number }
   /**
    * The effective policy, composed INSIDE the reservation's turn, refuses
@@ -177,6 +191,7 @@ export function reserveDecision(input: {
       spentTodayEurc: daily.spentToday,
       limitEurc: daily.limit,
       requestedEurc: daily.requested,
+      violations,
     }
   }
   if (violations.length > 0) return { kind: 'policy_violation', violations }
