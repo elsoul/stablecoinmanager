@@ -33,6 +33,13 @@ afterEach(() => {
 const RESULTS: Record<string, unknown> = {
   getSlot: 424242,
   eth_chainId: '0x1',
+  // 🔴 The methods `holdings` actually calls. The probe above uses getSlot and
+  // eth_chainId, so without these the detector covered the reachability check
+  // and not the tool that reads money. Same transport, but "same transport" is
+  // an inference and this file exists because an inference about this
+  // transport was wrong in production (#14063).
+  getBalance: { context: { slot: 1 }, value: 1234567890 },
+  eth_getBalance: '0x1bc16d674ec80000',
 }
 
 function installWorkerdFaithfulFetch(): string[] {
@@ -77,4 +84,29 @@ test('every namespace is reachable under workerd fetch rules', async () => {
   // endpoints the SDK resolves by default.
   assert.equal(calls.length, 3)
   assert.ok(calls.every((url) => url.startsWith('https://')))
+})
+
+test('the balance reads holdings makes go through the same workerd rules', () => {
+  // Not a rerun of the probe: `probeReachability` calls getSlot and
+  // eth_chainId, `holdings` calls getBalance and eth_getBalance. If a future
+  // SDK binds fetch correctly on one path and not the other, the probe test
+  // alone would stay green while wallet balances read as unreachable -- which
+  // is the exact shape of the defect this file was created for, one method
+  // over.
+  //
+  // Driven rather than asserted about: the stub below throws on any
+  // `this !== globalThis`, as workerd does.
+  const calls = installWorkerdFaithfulFetch()
+  const erpc = createGateway({ ERPC_API_KEY: 'test-key-0000000000' } as Env)
+
+  return Promise.all([
+    erpc.solana.rpc.getBalance('11111111111111111111111111111111').send(),
+    erpc.ethereum.rpc.eth_getBalance('0x0000000000000000000000000000000000000000', 'latest').send(),
+    erpc.avalanche.rpc.eth_getBalance('0x0000000000000000000000000000000000000000', 'latest').send(),
+  ]).then((results) => {
+    assert.equal(results.length, 3)
+    // Positive control: the requests really went out, one per namespace.
+    assert.equal(calls.length, 3, `expected three requests, got ${JSON.stringify(calls)}`)
+    assert.ok(calls.every((url) => url.startsWith('https://')))
+  })
 })
