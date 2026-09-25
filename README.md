@@ -1,190 +1,222 @@
 # StableCoinManager MCP
 
-A wallet-holding agent that lives in a Cloudflare Worker.
+**An AI agent that can pay for things on its own, with spending limits it cannot argue its way past.**
 
-Log in with Google from any MCP client — Claude, Codex, anything that speaks
-MCP — and the worker reads x402 payment requirements, lines up the stablecoins
-it needs through `@elsoul/erpc-sdk`, pays, and keeps the receipts. The private
-keys stay in the worker — the one way out is `wallet_export_seed`, which is
-confirmation-gated, rate limited and audited, and exists so that losing the
-Durable Object does not mean losing the funds. The rate limit is claimed inside
-the Durable Object, so concurrent calls cannot both pass it.
+StableCoinManager is an MCP server running in a Cloudflare Worker that holds a
+stablecoin wallet. Log in with Google from any MCP client (Claude, Codex, or
+anything else that speaks MCP), and the agent can read an x402
+`402 Payment Required` challenge, pay it with `@x402/core` / `@x402/evm`, and
+keep the receipt.
 
-This is the deployed form of the demo recorded on 2026-09-18/19, where Claude
-bought ERPC credit with EURC on Base and used it to provision a VPS and an
-Unlimited RPC plan — except the wallet is no longer on somebody's laptop.
+Giving an agent a wallet is easy. The hard part is making sure a confused or
+prompt-injected model cannot empty it. This worker does not rely on the
+prompt to prevent that. It relies on **ceilings enforced in code**, and a
+request that goes over one is refused.
 
-**Single owner by construction: one deployment = one wallet = one human.**
+- **x402 payments with no gas token needed.** The worker signs an EIP-3009
+  `transferWithAuthorization` and the x402 facilitator submits it, so the
+  wallet needs no ETH. Observed on Base Sepolia by the reference client in
+  `api/erpc/x402-rpc-api/.e2e-local/README.md`; not yet exercised by this
+  worker on mainnet (see "Nothing in this worker has moved real money yet").
+- **Limits the agent cannot raise.** Per-payment and daily limits come from
+  the deploy config. At runtime the agent can only *lower* them. Raising a
+  limit means a redeploy.
+- **Fails closed.** A non-numeric amount, a broken config value or an
+  unreadable spend total leads to a refusal, never to "no limit".
+- **Retries never pay twice.** Every money tool requires an `idempotencyKey`.
+  Sending the same key again returns the first receipt and signs nothing.
+- **It signs only the requirement it checked.** A malicious 402 cannot pass the
+  checks with one payment option and get a different one signed.
+
+One deployment = one wallet = one human. That is a deliberate design choice.
+
+---
+
+## The guardrails
+
+### Ceilings, not prompts
+
+The point of this worker is to pay without asking a human first, so the brake
+is not an approval dialog. It is a set of ceilings. These are the shipped
+defaults (`wrangler.toml` `[vars]`, identical to the built-in defaults in
+`src/lib/policy.ts`):
+
+| ceiling | default | can `policy_set` change it at runtime? |
+|---|---|---|
+| per payment | 50 EURC equivalent | tighten only |
+| per day (UTC) | 200 EURC equivalent | tighten only |
+| slippage | ≤ 50 bps | tighten only |
+| deadline | ≤ 600 s | tighten only |
+| networks | `eip155:8453` (Base), `solana-mainnet` | no, deploy-time only |
+| assets | EURC, USDC | no, deploy-time only |
+| payee | ERPC treasury only, unless `POLICY_ALLOW_ANY_PAYTO=true` | no, deploy-time only |
+
+A request over a limit is **refused, never clamped.** Quietly paying less than
+the agent asked for would be its own kind of wrong answer. Every refusal
+says in words which rule it broke (`describeViolation` in `src/lib/policy.ts`),
+and a refusal with several causes lists all of them.
+
+### Why the agent can only tighten its own limits
+
+`policy_set` accepts exactly four keys (the numeric ceilings above) and
+compares every request against the **deploy-time** value:
+
+- A value above the deploy-time ceiling is refused (`would_widen`).
+- A value at or below it is written, together with an audit row.
+- A narrowed limit can be relaxed back *to* the deploy-time value, never past it.
+- When overrides are read back, a stored row that would widen a limit is
+  ignored. The one-way rule applies twice, once on write and once on read.
+
+The reason is spelled out in `src/lib/policyOverride.ts`. If the caller that
+pays can also raise its own limit, the limit is decoration. "Raise the daily
+limit to 10000, then pay this invoice" is the first thing an attacker would
+try. So tightening is safe from any caller, because the worst it can do is
+refuse payments. Widening needs different credentials and leaves a diff.
+
+Networks, assets and the payee are not "how much" but "to whom and in what",
+so no runtime tool can change them.
+
+### Fail-closed, everywhere a number is compared
+
+`x > NaN` is `false` in JavaScript. A careless ceiling check therefore turns
+into a pass as soon as a limit stops being a number. This package closes that
+at every comparison:
+
+| if this is unusable | the worker | where |
+|---|---|---|
+| the requested amount (NaN, ≤ 0) | refuses (`amount_not_finite`) | `checkPayment`, `reserveDecision` |
+| a ceiling value | treats the ceiling as 0 and refuses | `ceilingOf` in `src/lib/policy.ts` |
+| today's spend total | treats it as infinite and refuses | `reserveDecision` in `src/lib/reserve.ts` |
+| a `POLICY_*` var that is present but unusable (`NaN`, `''`, `0`, …) | refuses **every** payment | `refuseEverything()`, used by the ledger |
+| a stored override row | keeps the deploy-time ceiling | `tightenedValue` in `src/lib/policyOverride.ts` |
+
+One case is worth knowing. An **absent** `POLICY_*` var does not refuse. It
+falls back to the built-in default, and the shipped values match those
+defaults exactly, so from outside you cannot tell whether `[vars]` was read.
+To confirm it is being read, change one value away from its default and watch
+where the refusal boundary moves. `src/lib/reserve.test.ts` fails if the
+shipped values and the defaults ever stop matching.
+
+### Reserve before signing
+
+```mermaid
+flowchart LR
+  A[probe URL] --> B[read 402]
+  B --> C[choose requirement]
+  C --> D{policy check}
+  D -- refused --> X[nothing signed]
+  D -- ok --> E["reserve: ledger row 'pending'<br/>(policy re-checked inside the ledger)"]
+  E -- refused / replay --> X
+  E --> F[sign EIP-3009]
+  F --> G[resend with payment header]
+  G --> H[record settled / stuck / failed]
+```
+
+The order is the design (`src/route/mcp/tools/x402Pay.ts`):
+
+- **The row comes first.** A payment row is written as `pending` before
+  anything is signed. A signature with no row is a payment the worker does
+  not know it made. A row with no signature can be reconciled.
+- **One step decides.** The daily total, the replay check, the effective
+  policy and the insert all run inside a single Durable Object method with no
+  `await` in it. A test pins that. So a `policy_set` that lands while a
+  payment is still probing the resource applies to that payment.
+- **Replays come back first.** A reused `idempotencyKey` returns the earlier
+  receipt, even if the daily ceiling has been reached since. Refusing a
+  replay would make an already-paid call look unpaid.
+- **The signature is bound to what was checked.** The x402 client's default
+  selector signs whichever requirement the resource listed first. This worker
+  swaps in its own selector, which signs only the requirement that passed the
+  policy check. It then compares the signed payload against that requirement
+  on all five fields (scheme, network, asset, amount, payee). Either check
+  alone refuses a mismatch.
+
+---
+
+## Quickstart
+
+```bash
+claude mcp add --transport http scm https://mcp-stablecoin-manager.erpc.global/mcp
+```
+
+Log in with Google. An account outside `ALLOWED_GOOGLE_EMAILS` gets a 403,
+and no authorization code is minted.
+
+Then, from the agent:
+
+```jsonc
+// 1. What am I allowed to spend, and how much is left today?
+policy_get      {}
+
+// 2. Tighten the daily limit. It stays tightened until changed again, and
+//    can never go above the deploy-time 200.
+policy_set      { "key": "maxEurcPerDay", "value": 20 }
+
+// 3. Look at a paid resource without paying. probeTwice reports whether the
+//    402's `extra` changes between reads.
+x402_inspect    { "url": "https://…/paid-resource", "probeTwice": true }
+
+// 4. Pay it. Re-sending the same idempotencyKey returns the same receipt.
+x402_pay        { "url": "https://…/paid-resource", "idempotencyKey": "order-2026-0001" }
+
+// 5. Did it go through?
+receipt         { "idempotencyKey": "order-2026-0001" }
+```
+
+`x402_inspect` and `x402_pay` send a `POST` unless `method` is given.
+
+### All 13 tools
+
+The count is asserted in `src/route/mcp/toolsList.test.ts`. Every argument
+schema is a zod schema, and the JSON Schema in `tools/list` is derived from
+it.
+
+| tool | what it does |
+|---|---|
+| `wallet_status` | addresses, init state, ERPC reachability, active ceilings |
+| `holdings` | balances on the networks the ERPC SDK can read (Base reports `unsupported_yet`) |
+| `policy_get` | effective ceilings, overrides, and today's remaining allowance |
+| `policy_set` | **tighten** one numeric ceiling, with an audit row |
+| `x402_inspect` | read a 402 without paying |
+| `x402_pay` | pay a 402: policy → reserve → sign → record |
+| `erpc_topup` | buy ERPC credit by paying its 402 (EURC only), then poll for the grant |
+| `history` | recent payments, newest first |
+| `receipt` | one payment, by `idempotencyKey` |
+| `plan` | which swaps and bridges are possible today, and what blocks the rest |
+| `swap` | resolve and constrain a swap route (does **not** sign or broadcast) |
+| `bridge` | check a bridge route (does **not** sign or broadcast) |
+| `wallet_export_seed` | reveal the recovery phrase (needs `confirm:"EXPORT"`, audited, rate limited) |
+
+The worker signs only x402 requirements on EVM networks (`eip155:*`) using the
+`exact` scheme. Others are reported as unpayable (`src/lib/x402.ts`).
+
+---
 
 ## What has and has not been exercised
 
-**Nothing in this worker has moved real money.** The payment path is argued
-from the one client that has -- `api/erpc/x402-rpc-api/.e2e-local/
-run-e2e-topup.mjs` -- and verified by tests that execute the SDK, not by a
-live settlement. The plan's canary is blocked on funding the wallet, and until
-it runs, every claim here about paying is a claim about code, not about an
-outcome.
+**Nothing in this worker has moved real money yet.** The payment path follows
+the one client in this repository that has settled a top-up,
+`api/erpc/x402-rpc-api/.e2e-local/run-e2e-topup.mjs`. It is verified by tests
+that run the x402 SDK, not by a live settlement. The production canary (a
+1-credit ERPC top-up) has not been run. The worker's EVM address was funded
+on 2026-09-24 — 1.5 EURC, read from outside the worker with an `eth_call`
+`balanceOf` against Base (`0x16e360`), since the worker itself cannot read
+Base balances yet (W1). What is still missing is an explicit go-ahead for an
+irreversible on-chain payment, not funds. Until it runs,
+every claim here about paying is a claim about code, not about an outcome.
+`swap` and `bridge` stop before signing for the same reason.
 
-This lives in the README rather than only in a PR description because a PR
-description does not land on main: this repository squashes with
-`COMMIT_MESSAGES`, so the body is not what a future reader finds.
+The flow the worker automates, Claude buying ERPC credit with EURC on Base,
+was demonstrated on 2026-09-18/19 with a local laptop wallet. This worker is
+the deployed form of that demo, with the wallet no longer on a laptop (plan:
+`docs/superpowers/plans/2026-09-21-stablecoin-manager-mcp.md`).
 
-## What ships where
+This section lives in the README rather than only in a PR description because
+this repository squashes merges, so a PR body is not what a future reader finds.
 
-| PR | Surface |
-|---|---|
-| PR-0 | `deno/api/auth-api` seeded OAuth client (merged separately) |
-| PR-1 | scaffold, OAuth 2.1 AS, Google login via auth-api, wallet derivation, `wallet_status` / `holdings` / `wallet_export_seed`, `WalletLedger` DO schema |
-| PR-2 | `x402_inspect` / `x402_pay` / `erpc_topup` / `history` / `receipt` / `policy_get` |
-| **PR-3 (this)** | `plan` / `swap` / `bridge` / `policy_set` |
+---
 
-Plan and acceptance criteria: `docs/superpowers/plans/2026-09-21-stablecoin-manager-mcp.md`.
-
-## How a login works
-
-```
-MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ auth-api (?provider=google) ──▶ Google
-                                              │
-                                    allowlist: provider === 'google'
-                                            && isEmailVerified === true
-                                            && email ∈ ALLOWED_GOOGLE_EMAILS
-```
-
-Two separate OAuth legs, and they are separate on purpose:
-
-- **Client ↔ worker.** The worker is its own Authorization Server. It mints its
-  own tokens with `aud` pinned to its own base URL, so a token issued by some
-  other MCP server can never be replayed here.
-- **Worker ↔ human.** auth-api answers only "which Google account is this?".
-  We do not hold auth-api's customer JWT secret and therefore do not verify that
-  token's signature — it is a response body received over TLS from the issuer we
-  just POSTed to, the same trust argument `api/mcp/master-api` makes about
-  Discord. It is read once and never stored or forwarded.
-
-Making auth-api itself the AS was rejected: its access tokens carry no `aud`,
-so the worker could only validate them by holding the shared customer secret —
-which would make every dashboard token a key to this wallet.
-
-The allowlist is re-checked **on every MCP call**, not only at login, so
-removing an address takes effect immediately rather than after the current
-token expires.
-
-## What this worker's token is actually bound to
-
-`cyan` raised this during the PR-0 review, so it is answered by measurement
-rather than by design intent. auth-api has a route (`/oauth/login-url`) that
-mints login state for an arbitrary `redirect_uri` without consulting its
-seeded-client pin, which means **an auth-api access token proves only that
-somebody completed a Google login somewhere** — it is not, on its own, a
-capability for this wallet. Tracked as issue #13969.
-
-So the question is not "is auth-api's token trustworthy?".
-
-It is also **not** "what can make this worker mint an authorization code?" —
-that was the question asked during PR-1 review, and asking it is what hid a
-defect for a round. Naming the barrier as the population drops every route
-that does not pass through it: the refresh grant never touches an `auth_code:`
-key, so a search organised around that key could not see that refresh tokens
-were neither single-use, rotated, nor bound to their client.
-
-The question that finds everything is **"what can make `/mcp/*` call
-`next()`?"** — i.e. what can produce a token this worker accepts. Measured
-across the whole source, there are **two** producers, and both are the two call
-sites of `generateMCPToken` in `route/oauth/token.ts`:
-
-**1. The authorization-code grant.** `route/oauth/callback.ts` is the only
-writer of an `auth_code:` KV entry, and before it writes one it requires
-**all** of:
-
-1. state that verifies under **this worker's** `OAUTH_STATE_SECRET` — an
-   attacker cannot forge it, and auth-api never sees the secret;
-2. an `upstreamVerifier` carried inside that signed state — so the upstream
-   code is exchanged with a verifier only this worker holds;
-3. a client id that is still registered here, with the presented
-   `redirect_uri` among its registered callbacks;
-4. `provider === 'google' && isEmailVerified === true && email ∈ ALLOWED_GOOGLE_EMAILS`.
-
-**2. The refresh grant.** A refresh token is single-use (the stored entry is
-destroyed before any further check can throw, so a rejected redemption still
-consumes it), rotated (the caller never leaves with the token it arrived
-with), and bound to the client it was issued to.
-
-The binding matters because `/oauth/register` mints public clients by default
-— `token_endpoint_auth_method: 'none'` — and for those, client identity is the
-only thing distinguishing one caller from another at the token endpoint.
-(`client_secret_post` is also accepted and `route/oauth/token.ts` authenticates
-those clients with their secret; the binding applies to both.)
-
-Two things revoke access here, and the stronger one is not the token lifetime:
-the allowlist is re-checked on **every** `/mcp/*` call, so removing an address
-stops an already-issued token immediately. Single use and rotation bound how
-long a *leaked* token is useful when the owner is still authorized.
-
-This worker also never accepts an auth-api token from a caller. The only
-`exchangeAuthApiCode` call site is that same callback, on a back-channel POST
-it initiates itself.
-
-The registration allowlist is what keeps step 3 meaningful: it admits only the
-hosted Claude and ChatGPT callbacks and RFC 8252 loopback. A loopback callback
-resolves on **the browser's own machine**, so an attacker who registers one
-still cannot have a victim's code delivered to themselves.
-
-What is *not* claimed: that the worker is immune to a compromise of
-`OAUTH_STATE_SECRET` or `JWT_SECRET`, or that an allowlisted owner's own
-compromised browser cannot be used against it. The email allowlist in
-particular does **not** help there, because such a victim is a legitimate
-allowlisted user.
-
-## The wallet
-
-One 24-word mnemonic, two keys, three displayed wallets:
-
-| Chain | Curve | Path | Compatible with |
-|---|---|---|---|
-| Solana | ed25519 | `m/44'/501'/0'/0'` | Phantom, Solflare |
-| Ethereum / Base / Avalanche C | secp256k1 | `m/44'/60'/0'/0/0` | MetaMask |
-
-The EVM address is the same on all three EVM chains — "three wallets" is a
-display detail, not three keys.
-
-The phrase lives in the `WALLET_MNEMONIC` Worker secret and nowhere else. It is
-re-derived per request and never logged or returned, with one deliberate
-exception: `wallet_export_seed`, which requires `confirm:"EXPORT"`, writes an
-audit row, and is rate limited. That exception exists because a wallet whose
-only copy lives in a Durable Object is a wallet that a deleted namespace
-destroys.
-
-`src/wallet/slip10.ts` is copied verbatim from `wallet/packages/core` (a
-separate pnpm workspace, so it cannot be imported). `src/wallet/derive.test.ts`
-pins the same golden addresses that implementation pins, plus the two canonical
-public BIP-44 EVM vectors.
-
-## Safety valve: ceilings, not prompts
-
-The point of this worker is to pay without asking a human first, so the brake
-is a ceiling rather than an approval dialog. Defaults are set by `POLICY_*`
-vars and read back with `policy_get`, which reports the effective values and
-the deploy-time ceiling side by side.
-
-`policy_set` writes a runtime override with an audit row, and it can only
-TIGHTEN: the comparison is against the deploy-time ceiling, so a narrowed
-limit can be relaxed back to -- never past -- the value an operator approved.
-Raising a ceiling still means editing the vars and redeploying, which needs
-different credentials and leaves a diff. Networks, assets and the payee are
-deploy-time only; they are not "how much" but "to whom and in what".
-
-| | |
-|---|---|
-| per payment | 50 EURC equivalent |
-| per day | 200 EURC equivalent |
-| networks | `eip155:8453`, `solana-mainnet` |
-| assets | EURC, USDC |
-| payee | ERPC treasury only, unless `POLICY_ALLOW_ANY_PAYTO=true` |
-| slippage | ≤ 50 bps |
-| deadline | ≤ 600 s |
-
-Over-limit requests are **refused, never clamped** — quietly paying less than
-asked is its own wrong answer.
+## The ledger
 
 ### What a payment row means, and what the daily ceiling counts
 
@@ -200,46 +232,100 @@ resolves the row, including the one that throws.
 | `stuck` | signed and sent, outcome unknown -- the response was lost, the resource reported stuck, or it answered with an error **and a transaction hash** | **yes** |
 | `failed` | nothing was signed, or the resource answered with no transaction hash at all | no |
 
-The line between the last two is **the transaction hash, not the status
-code**. A hash coming back is evidence a transaction exists, whatever the
-status says about it, so a 500 carrying a hash is `stuck`. Counting it is
-deliberate: `stuck` is written exactly when the money has most likely moved
-and the worker cannot confirm it, so excluding it would let repeated stuck
-payments spend past the ceiling -- the ceiling failing open in the one case
-where something has already gone wrong. `failed` is excluded because it is
-only written where nothing reached the chain.
+The line between `stuck` and `failed` is **the transaction hash, not the
+status code**. A returned hash is evidence that a transaction exists,
+whatever the status code says, so a 500 carrying a hash is `stuck`. Counting
+`stuck` is deliberate. It is written exactly when the money has most likely
+moved and the worker cannot confirm it. Excluding it would let repeated stuck
+payments spend past the ceiling, which would make the ceiling fail open in the
+one case where something has already gone wrong. `settled` is terminal. A late
+poll cannot reopen a completed payment.
 
-Retrying is safe: `idempotencyKey` is required on every money tool and is the
-primary key of the row. A repeat call returns the first receipt **without
-signing again**, even if the ceiling has since been reached -- refusing a
-replay would make an already-paid call look unpaid.
+---
+
+## Login and who can call it
+
+```
+MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ auth-api (?provider=google) ──▶ Google
+                                              │
+                                    allowlist: provider === 'google'
+                                            && isEmailVerified === true
+                                            && email ∈ ALLOWED_GOOGLE_EMAILS
+```
+
+- **The worker is its own Authorization Server.** It mints tokens with `aud`
+  pinned to its own base URL, so a token from another MCP server cannot be
+  replayed here. auth-api answers only "which Google account is this?". Its
+  response is read once over the back channel the worker opened itself, and
+  never stored or forwarded. This worker never accepts an auth-api token from
+  a caller.
+- **The allowlist is re-checked on every `/mcp/*` call** (`src/index.ts`), so
+  removing an address stops an already-issued token immediately.
+- **Two producers of an accepted token, both in `route/oauth/token.ts`:**
+  1. the authorization-code grant. `route/oauth/callback.ts` writes a code
+     only after state verifies under this worker's `OAUTH_STATE_SECRET`, the
+     upstream verifier comes from inside that signed state, the client and
+     `redirect_uri` are registered, and the allowlist passes.
+  2. the refresh grant. Refresh tokens are single-use, rotated, and bound to
+     the client they were issued to.
+- **Registration is allowlisted** to the hosted Claude and ChatGPT callbacks
+  and RFC 8252 loopback.
+
+Why this shape: an auth-api access token on its own proves only that someone
+completed a Google login somewhere (issue #13969). It is not a capability for
+this wallet, so the worker never treats it as one.
+
+What is *not* claimed: immunity to a compromise of `OAUTH_STATE_SECRET` or
+`JWT_SECRET`, or protection against an allowlisted owner's own compromised
+browser. The email allowlist does not help there, because that victim is a
+legitimate allowlisted user.
+
+---
+
+## The wallet
+
+One 24-word mnemonic, two keys, three displayed wallets:
+
+| Chain | Curve | Path | Compatible with |
+|---|---|---|---|
+| Solana | ed25519 | `m/44'/501'/0'/0'` | Phantom, Solflare |
+| Ethereum / Base / Avalanche C | secp256k1 | `m/44'/60'/0'/0/0` | MetaMask |
+
+The EVM address is the same on all three EVM chains. "Three wallets" is a
+display detail, not three keys.
+
+The phrase lives in the `WALLET_MNEMONIC` Worker secret and nowhere else. It is
+re-derived per request and never logged or returned, with one deliberate
+exception: `wallet_export_seed`. It requires `confirm:"EXPORT"`, writes an
+audit row, and is rate limited, with the limit claimed inside the Durable
+Object so concurrent calls cannot both pass it. The exception exists because
+a wallet whose only copy lives in a Durable Object would be destroyed along
+with a deleted namespace. It is not the only way the phrase can leave: anyone
+who can deploy code to this worker can read the secret.
+
+`src/wallet/slip10.ts` is copied verbatim from `wallet/packages/core` (a
+separate pnpm workspace, so it cannot be imported). `src/wallet/derive.test.ts`
+pins the same golden addresses that implementation pins, plus the two canonical
+public BIP-44 EVM vectors.
 
 ## Chain access
 
 Every chain call goes through `@elsoul/erpc-sdk`. There is no private RPC
-client and no fallback path. What the published SDK cannot do yet, a tool
-reports as `{ ok: false, error: 'unsupported_yet', needs: 'W1' }` rather than
-reaching around it.
+client and no fallback path. When the published SDK cannot do something yet,
+the tool reports `{ ok: false, error: 'unsupported_yet', needs: 'W1' }`
+instead of working around it. The measured capability of the published SDK
+tarball (no Base namespace yet) is recorded in `src/chain/gateway.ts`. Re-measure
+against the tarball, never the GitHub source tree, when a new SDK version ships.
 
-Measured against the published tarball of `@elsoul/erpc-sdk` 0.8.0 (2026-09-21,
-re-measured at the start of implementation):
+Base **balances** are therefore not readable yet (wishlist W1). That does not
+block an ERPC credit top-up. Paying the 402 is a signature plus an HTTPS
+request, and the facilitator submits the transaction.
 
-| probe | result |
-|---|---|
-| `baseRpc` | 0 |
-| `solanaRpc` / `ethereumRpc` / `avalancheCRpc` | 11 each (positive control) |
-| `"eip155:8453"` | 0 |
-| bridge capability ids | exactly the two EURC Ethereum↔Solana ones |
+---
 
-So Base **balances** are not readable yet (wishlist W1). This does **not** block
-ERPC credit top-up: paying an x402 402 with EIP-3009
-`transferWithAuthorization` is a signature plus an HTTPS request, and the
-facilitator submits the transaction — the payer needs no ETH.
+## Operating it
 
-Re-measure against the tarball, never the GitHub source tree (which carries
-unreleased additions), when a new SDK version ships.
-
-## Deploying
+### Deploying
 
 The KV namespace already exists (`mcp-stablecoin-manager-MCP_KV`,
 `ad68f65964514401871ce3ba1d3bab66`) and its id is in `wrangler.toml`. CI
@@ -258,52 +344,44 @@ pnpm -F mcp-stablecoin-manager wallet:init     # generates and pipes the mnemoni
 🔴 **Immediately after `wallet:init`, take the offline backup.** Log in over
 MCP and call `wallet_export_seed`, then store the phrase somewhere that is not
 this deployment. Measured: `wrangler secret` offers `put`, `delete`, `list`
-and `bulk` — **there is no `get`**, so nothing can read the phrase back out of
-Cloudflare. `wallet_export_seed` is the only read path that exists, and it is
-inside the worker whose throttle can refuse. Do this before funding the
+and `bulk`, and **there is no `get`**, so nothing can read the phrase back out
+of Cloudflare. `wallet_export_seed` is the only read path that exists, and it
+runs inside the worker, whose throttle can refuse. Do this before funding the
 wallet.
-
-`deploy:prod` runs the production-config assertion itself rather than relying
-on a `predeploy:prod` script. The pinned pnpm does run pre scripts — measured,
-`pnpm run deploy:prod` prints the pre script's output before the main one — so
-this is not a fix for a broken guard. It removes the guard's dependency on
-`enable-pre-post-scripts` staying at its default, which is a setting anyone can
-change repo-wide without touching this package.
-
-**Why the OAuth secrets are not synced from GitHub**, which is what the plan
-called for: this repository is at GitHub's hard limit of 100 Actions secrets,
-so creating another one returns HTTP 400 — measured 2026-09-21,
-`gh api repos/elsoul/vs2-app/actions/secrets` reports `total_count` 100 with an
-empty page 2, while reading an existing secret still succeeds, so it is the cap
-and not a permission. Freeing a slot means deleting someone else's secret,
-which is not this thread's call.
-
-Until the OAuth secrets are set, `/oauth/*` answers **503** and names what is
-missing, and `/health` reports `config: "incomplete"` with the list. A worker
-that booted and signed tokens with `undefined` would be worse than one that
-refuses.
 
 `wallet:init` never prints the phrase, never writes it to a file, and never
 puts it in argv. It refuses to run when a `WALLET_MNEMONIC` secret already
 exists, because replacing the phrase of a funded wallet strands the funds.
 Use `--dry-run` to exercise it without credentials.
 
-That assertion refuses to ship a config with a placeholder KV id, a missing
-Durable Object binding or migration tag, a missing custom domain, an empty
-login allowlist, `workers_dev = true`, a development secret, or a mnemonic or
-API key written into the config.
+`deploy:prod` runs the production-config assertion itself, so the guard does
+not depend on `enable-pre-post-scripts` staying at its default. The assertion
+refuses to ship a config with a placeholder KV id, a missing Durable Object
+binding or migration tag, a missing custom domain, an empty login allowlist,
+`workers_dev = true`, a development secret, or a mnemonic or API key written
+into the config.
+
+Until the OAuth secrets are set, `/oauth/*` answers **503** and names what is
+missing, and `/health` reports `config: "incomplete"` with the list. A worker
+that booted and signed tokens with `undefined` would be worse than one that
+refuses.
+
+**Why the OAuth secrets are not synced from GitHub:** this repository is at
+GitHub's hard limit of 100 Actions secrets, so creating another one returns
+HTTP 400 (measured 2026-09-21). Freeing a slot means deleting someone else's
+secret, which is not this thread's call.
 
 `wrangler.toml` is **hand-managed** and is not generated from `slv.toml`: the
 generator has no schema for `durable_objects` / `new_sqlite_classes`, so
 regenerating would drop the `v1` migration tag and orphan the ledger. Same
 precedent as `api/erpc/x402-rpc-api`.
 
-## Rolling back a bad deploy
+### Rolling back a bad deploy
 
 Three different things get called "rolling back" here, and they do not do the
 same thing.
 
-**1. Roll the Worker back to its previous version — the one you usually want.**
+**1. Roll the Worker back to its previous version. This is usually the one you want.**
 
 ```bash
 pnpm -F mcp-stablecoin-manager exec wrangler rollback
@@ -314,15 +392,15 @@ untouched. This is the fast, safe operation for a bad deploy.
 
 **2. Revert the service commit.** `api/mcp/stablecoin-manager/**` matches this
 workflow's `paths:`, so the revert itself triggers a deploy of the reverted
-code. This is the normal git path and it does reach production — but it takes a
-CI run, so prefer (1) when something is actively broken.
+code. This is the normal git path and it does reach production, but it takes
+a CI run, so prefer (1) when something is actively broken.
 
-**3. Revert the whole PR, workflow included.** This is the trap: removing
+**3. Revert the whole PR, workflow included.** This is the trap. Removing
 `.github/workflows/cf-mcp-stablecoin-manager.yml` means nothing triggers, so
 **the deployed Worker keeps serving with nothing in the repo that manages it**.
 A revert is not a teardown and, done this way, is not even a rollback.
 
-## Retiring the worker
+### Retiring the worker
 
 Retirement is a different operation with permanent consequences. Reverting the
 PR does not perform it: the deployed Worker, its custom domain, its KV
@@ -350,32 +428,32 @@ offline backup, and the transcript.
 
 Treat the export as a one-time event with a known blast radius. Take the
 backup, then clear or delete that conversation. If the client syncs history to
-a service, assume the phrase reached that service and plan accordingly --
-rotating the wallet means generating a new one and moving the funds, because
+a service, assume the phrase reached that service and plan accordingly.
+Rotating the wallet means generating a new one and moving the funds, because
 `wrangler secret` cannot show you what is stored and a phrase that leaked
 cannot be un-leaked.
 
-## If `wallet_export_seed` refuses forever
+### If `wallet_export_seed` refuses forever
 
-The export throttle fails closed: a `throttles` row the worker would not have
-written — a corrupted value, not the large positive integer it always stores —
-reads as a live claim, and because it reads as live the upsert that would
-replace it never runs. Correct for a rate limit on revealing a recovery
-phrase, but it does not heal on its own.
+The export throttle fails closed. It reads a `throttles` row the worker would
+not have written as a live claim: a corrupted value rather than the large
+positive integer it always stores. Because it reads as live, the upsert that
+would replace it never runs. That is correct for a rate limit on revealing a
+recovery phrase, but it does not heal on its own.
 
 If exports are refused long past the 300-second window, the row is the thing to
 look at.
 
 Be precise about what survives. The phrase is a Worker secret, not ledger
-state, so **the worker keeps signing** no matter what the ledger says — the
+state, so **the worker keeps signing** no matter what the ledger says. The
 wallet is not bricked. But "recoverable" does not mean "readable": `wrangler
 secret` has no `get`, so **nobody can retrieve the phrase from Cloudflare**,
 and the only read path is the `wallet_export_seed` that is currently refusing.
 
-Which is why the offline backup is taken at setup time, before the wallet is
+That is why the offline backup is taken at setup time, before the wallet is
 funded, and not left until it is needed.
 
-## Local development
+### Local development
 
 ```bash
 pnpm -F mcp-stablecoin-manager dev
@@ -383,17 +461,18 @@ pnpm -F mcp-stablecoin-manager check   # tsc, source and tests
 pnpm -F mcp-stablecoin-manager test
 ```
 
-The dev callback is `https://dev-mcp-stablecoin-manager.erpc.global:8787` — a
-subdomain we own, mapped to `127.0.0.1` in `/etc/hosts`, served with
+The dev callback is `https://dev-mcp-stablecoin-manager.erpc.global:8787`, a
+subdomain we own, mapped to `127.0.0.1` in `/etc/hosts` and served with
 `--local-protocol https --port 8787`. Raw `localhost` / `127.0.0.1` is
-deliberately **not** a registered redirect_uri on auth-api: the pin is what
-keeps an authorization code from being delivered to a host we do not own.
+deliberately **not** a registered redirect_uri on auth-api. That pin keeps an
+authorization code from being delivered to a host we do not own.
 
-## Connecting a client
+---
 
-```bash
-claude mcp add --transport http scm https://mcp-stablecoin-manager.erpc.global/mcp
-```
+## 日本語要約
 
-Then log in with Google. An account outside `ALLOWED_GOOGLE_EMAILS` gets a 403
-and no authorization code is minted.
+- x402 の 402 を読んで EIP-3009 署名で支払う、ウォレット内蔵の MCP サーバー（Cloudflare Worker）。Google ログイン・1 デプロイ = 1 ウォレット = 1 人。
+- AI の使いすぎは prompt ではなくコードの上限で止める: 1 回・1 日・slippage・deadline の上限を超えた要求は拒否し、減額して払うことはしない。
+- `policy_set` は上限を**下げることしかできない**。上げるには再デプロイが要る。network・asset・支払先は実行時に変更できない。
+- 値が読めない・数値でないときは常に拒否側に倒れる（fail-closed）。`idempotencyKey` で二重払いを防ぎ、署名するのは検査を通った要求だけ。
+- 実弾の canary（本番少額決済）は未実施。wallet（worker の EVM アドレス）には 2026-09-24 に 1.5 EURC が入金済みで、待っているのは不可逆な支払いへの明示的な go-ahead。ここに書いた支払いの主張はコードとテストについてのもので、本番での結果ではない。
