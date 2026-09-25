@@ -264,12 +264,109 @@ MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ auth-ap
 - **Two producers of an accepted token, both in `route/oauth/token.ts`:**
   1. the authorization-code grant. `route/oauth/callback.ts` writes a code
      only after state verifies under this worker's `OAUTH_STATE_SECRET`, the
-     upstream verifier comes from inside that signed state, the client and
-     `redirect_uri` are registered, and the allowlist passes.
+     client and `redirect_uri` are registered, and the allowlist passes. On
+     the default (`erpc-auth-api`) path the upstream verifier comes from
+     inside that signed state; see "`AUTH_PROVIDER`: erpc-auth-api (default)
+     vs app-oidc" below for where it lives on the `app-oidc` path instead.
   2. the refresh grant. Refresh tokens are single-use, rotated, and bound to
      the client they were issued to.
 - **Registration is allowlisted** to the hosted Claude and ChatGPT callbacks
   and RFC 8252 loopback.
+
+### `AUTH_PROVIDER`: erpc-auth-api (default) vs app-oidc
+
+| `AUTH_PROVIDER` | identity provider | required vars |
+|---|---|---|
+| unset or `erpc-auth-api` (default) | auth-api (`?provider=google`) | `AUTH_API_BASE_URL`, `AUTH_API_CLIENT_ID` |
+| `app-oidc` | the app-oidc-api broker | `APP_OIDC_ISSUER`, `APP_OIDC_CLIENT_ID` |
+
+A third-party deploy of this template that wants its own Google login (rather
+than reusing auth-api, which is ERPC's own) sets `AUTH_PROVIDER=app-oidc` and
+points at the broker (`api/app-oidc-api`). The deploy-time assertion in
+`src/lib/productionConfig.ts` checks this in one direction only: the default
+(`erpc-auth-api`) config is refused if `APP_OIDC_ISSUER` or `APP_OIDC_CLIENT_ID`
+is present, on the assumption that it is a switch someone started and did not
+finish. Going
+the other way, an `app-oidc` config is not required to omit `AUTH_API_*` --
+those vars are simply not read on that path, and their presence is not
+checked either way.
+
+**Upstream PKCE verifier storage differs from the erpc-auth-api path.** The
+default path carries its upstream verifier inside the HMAC-signed `state`
+blob (see `utils/state.ts`). The app-oidc path does not: the verifier goes
+into `MCP_KV` under `oidc_txn:<hex(sha256(state))>`, TTL 600 seconds, read and
+deleted (single use) on the matching callback. `grep -n upstreamVerifier
+src/utils/appOidc.ts` is 0 -- that file never reads or writes the state field.
+
+**Broker key-rotation upper bound.** If the broker drops a compromised signing
+key, this worker keeps accepting a token signed with it for at most
+JWKS max-age (≤ 300s) + id_token `exp` (300s) + clock leeway (30s) = **630
+seconds** after the broker's own deploy completes. This bound only covers
+*new* logins: an MCP access token or refresh token this worker already issued
+before the compromise is unaffected by the broker's rotation -- it can only be
+revoked here, by rotating `JWT_SECRET` / `REFRESH_TOKEN_SECRET` or by removing
+the address from `ALLOWED_GOOGLE_EMAILS` (re-checked on every `/mcp/*` call).
+
+Two independent things keep an owner's login from becoming someone else's
+capability.
+
+**① Who the code can go to** is decided by the DCR redirect allowlist
+(`route/oauth/client.ts` `isAllowedRedirectUri`). Dynamic registration is
+open by design, so this allowlist carries the whole weight on the
+registration path -- widening it widens who can be handed an authorization
+code for this wallet. Concretely: without it, an attacker could register
+their own client, start a login, and if the owner completes that login in
+their own browser, it is the attacker's client -- not the owner -- that ends
+up holding the code and the access token it exchanges for. This does not
+overlap with (a), (b) or (c) below; it is re-checked at registration time,
+and again at every subsequent lookup (`route/oauth/authorize.ts`,
+`route/oauth/callback.ts`, `route/oauth/token.ts` all call
+`getRegisteredClient`, which re-validates every stored `redirect_uri` against
+`isAllowedRedirectUri` on each call -- `route/oauth/client.ts` L93).
+
+Three narrower things, together, decide whether the person completing a
+login through an already-registered client is the owner:
+
+(a) *(app-oidc path only)* an attacker who intercepts the upstream
+    authorization `code` cannot redeem it: the PKCE verifier it must be
+    paired with lives only in this worker's `MCP_KV` (`oidc_txn:`), never in
+    a value that leaves the worker. The default (`erpc-auth-api`) path does
+    not have this property -- its upstream verifier travels inside the
+    signed `state` blob instead (issue #14171; see "Upstream PKCE verifier
+    storage differs..." above).
+(b) on both paths, the MCP authorization code the callback produces is
+    itself bound to the downstream PKCE pair (S256) the MCP client set up,
+    so possessing that code is not enough on its own to redeem it;
+(c) an id_token for an account this worker does not own cannot become an MCP
+    authorization code: the email allowlist (`evaluateLogin`,
+    `ALLOWED_GOOGLE_EMAILS`) runs, and runs before the `auth_code:` write, in
+    `route/oauth/callback.ts`.
+
+(a) does not depend on any of the conditions below -- it is a property of
+the app-oidc path itself. (b) and (c) hold only while:
+
+① the DCR redirect allowlist is not widened (`route/oauth/client.ts`
+   `isAllowedRedirectUri`) -- protects the "who the code can go to" question
+   above, on its own;
+② the downstream PKCE (S256) requirement is not removed
+   (`route/oauth/authorize.ts`, `route/oauth/token.ts`) -- protects (b);
+③ the email allowlist decision still runs, and still runs before the
+   `auth_code:` write, in `route/oauth/callback.ts` -- protects (c).
+
+A template deployer who widens ① breaks that guarantee for their own
+deploy, regardless of anything in this file.
+
+**Declared deviation from RFC 9700 §2.1.1, on the app-oidc path**: that
+section requires binding the PKCE `code_challenge`/nonce to both the client
+and the user agent. On the app-oidc path, the client-side binding is the
+upstream verifier this worker holds in `MCP_KV` (a above); there is no
+user-agent binding -- no cookie ties a login attempt to the browser that
+started it. That binding is deferred to a later phase; ①, ② and ③ above,
+together, are what stand in for it in the meantime. The default
+(`erpc-auth-api`) path does not have even the client-side binding in the
+RFC's sense, since its upstream verifier lives in the signed `state` value
+rather than server-side storage -- the same issue #14171 exposure noted
+under (a).
 
 Why this shape: an auth-api access token on its own proves only that someone
 completed a Google login somewhere (issue #13969). It is not a capability for

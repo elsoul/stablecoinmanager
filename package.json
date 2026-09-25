@@ -13,7 +13,7 @@
     "assert:prod-config": "node scripts/assertProductionConfig.ts",
     "deploy:prod": "node scripts/assertProductionConfig.ts && wrangler deploy",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx --test src/wallet/derive.test.ts src/chain/signBinding.test.ts src/chain/gateway.test.ts src/chain/catalog.test.ts src/chain/swap.test.ts src/chain/bridge.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/reserve.test.ts src/lib/settle.test.ts src/lib/x402.test.ts src/lib/networks.test.ts src/lib/routes.test.ts src/lib/policyOverride.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/mcp/refusal.test.ts src/route/mcp/toolsList.test.ts src/route/mcp/tools/policySet.test.ts",
+    "test": "tsx --test src/wallet/derive.test.ts src/chain/signBinding.test.ts src/chain/gateway.test.ts src/chain/catalog.test.ts src/chain/swap.test.ts src/chain/bridge.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/productionConfig.provider.test.ts src/lib/productionConfig.node.test.ts src/lib/reserve.test.ts src/lib/settle.test.ts src/lib/x402.test.ts src/lib/networks.test.ts src/lib/routes.test.ts src/lib/policyOverride.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/utils/appOidc.test.ts src/utils/appOidcJwks.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/oauth/authApiLogin.characterization.test.ts src/route/oauth/authApiLoginOutcome.test.ts src/route/oauth/appOidcLogin.test.ts src/route/mcp/refusal.test.ts src/route/mcp/toolsList.test.ts src/route/mcp/tools/policySet.test.ts",
     "test:deploy": "pnpm test && pnpm assert:prod-config",
     "wallet:init": "node scripts/wallet-init.mjs"
   },
@@ -26,6 +26,7 @@
     "@x402/core": "catalog:",
     "@x402/evm": "catalog:",
     "hono": "catalog:",
+    "jose": "catalog:",
     "viem": "catalog:",
     "zod": "catalog:"
   },
