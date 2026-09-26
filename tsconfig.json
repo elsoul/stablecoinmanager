@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "types": ["@cloudflare/workers-types"],
+    "module": "ESNext",
+    "noImplicitReturns": true,
+    "outDir": "dist",
+    "target": "ESNext",
+    "strict": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "lib": ["esnext"],
+    "sourceMap": true,
+    "paths": {
+      "@/*": ["src/*"],
+      "@constants/*": ["./constants/*"]
+    }
+  },
+  "compileOnSave": true,
+  "include": ["./src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
