@@ -34,10 +34,10 @@ const CATALOG: Array<AssetPreference & { symbol: string }> = [
  *
  * It was the last reader on the money path outside the brand. Harmless while
  * it read only `allowedAssets` and `allowedNetworks`, neither of which is
- * overridable -- and that is exactly the shape cyan named at the PR-3 gate:
+ * overridable -- and that is exactly the shape named at review:
  * one function outside the barrier reads as "the barrier covers everything"
  * until the day someone makes an asset list overridable, at which point this
- * is the only place still consulting the ceiling (#14054).
+ * is the only place still consulting the ceiling.
  *
  * Making it a type error today costs one word and removes a future silent
  * divergence, which is the trade the rest of this package has already made
@@ -56,7 +56,7 @@ export function allowedAssetPreferences(policy: EffectivePolicyValue): AssetPref
  * 🔴 This is NOT the policy's business and must not widen with it. Top-ups are
  * EURC-denominated by a standing ruling -- `constants/base.ts` records it on
  * USDC_BASE_MAINNET_CONTRACT: "USDC on Base is NOT accepted for credit top-ups
- * (Kawasaki 2026-09-10: top-ups are EURC-denominated only)".
+ * (design decision, 2026-09-10: top-ups are EURC-denominated only)".
  *
  * Without this, `erpc_topup` inherits x402_pay's preferences, and a 402 that
  * offered USDC would be paid in USDC -- correct as a payment, wrong as a

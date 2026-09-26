@@ -46,8 +46,7 @@ export type ReserveOutcome =
      * daily numbers because its guidance for them is specific, but a payment
      * that is over the daily ceiling AND on a disallowed network used to
      * report only the first -- so fixing what the message named left the
-     * payment still refused, for a reason the caller was never told
-     * (steiner N-6, #14067).
+     * payment still refused, for a reason the caller was never told.
      */
     violations: PolicyViolation[]
   }
@@ -71,7 +70,7 @@ export type ReserveOutcome =
  * It matters because of the specific way that one fails. Deleting the check
  * is caught by a source pin; NEUTERING it is not. Composing the fresh policy,
  * running `checkPayment`, and then ignoring the result left 237 tests green
- * with the window reopened on every ceiling (steiner B-2, #14067). There is
+ * with the window reopened on every ceiling. There is
  * nothing to neuter now: the caller receives an outcome and the tests below
  * drive this function directly.
  */
@@ -90,7 +89,7 @@ export const OVERRIDE_ROWS_SQL = `SELECT name, value FROM policy_overrides`
  * its result are one unit that a test can drive. Handing rows in left the
  * pairing in the Durable Object, where `policyFromOverrideRows(ceiling, [])`
  * kept every token a source pin looks for while discarding what it read --
- * measured at 238 pass, 0 red (gilgamesh R2-N1, #14067).
+ * measured at 238 pass, 0 red.
  *
  * What remains reachable, stated: a caller can still pass a selector that
  * returns nothing. That is one deliberate lambda rather than a dropped
@@ -125,7 +124,7 @@ export function policyFromOverrideRows(
  * `listVar` both `return fallback` on `undefined`, deliberately, and
  * `policy.test.ts` pins that behaviour by name. `loadPolicy` throws only when
  * a var is present and unusable ('NaN', 'Infinity', '1e999', ''), and only
- * then does the ledger land here (cyan B-2, #14067).
+ * then does the ledger land here.
  *
  * The difference is not academic. The shipped `[vars]` are byte-identical to
  * the built-in defaults, so a worker that reads no vars at all behaves
@@ -157,7 +156,7 @@ export function refuseEverything(): EffectivePolicyValue {
  * the pin on "both branches name every cause" was a grep for
  * `describeViolation`, and a grep is satisfied by a branch that computes the
  * list and drops it. Measured: deleting the `...others` spread while leaving
- * the computation left 247 pass / 0 fail (cyan N-1, #14074) -- the same
+ * the computation left 247 pass / 0 fail -- the same
  * "text pins lose" shape this package demoted its other greps for.
  *
  * Now the list is built where node can drive it, so a branch that stops

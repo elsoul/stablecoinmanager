@@ -6,9 +6,10 @@
  * nobody enforces is a promise to the caller that the code does not keep, and
  * two hand-written copies drift the moment one is edited.
  *
- * The count is part of the contract and is asserted in toolsList.test.ts:
- * PR-1 ships 3, PR-2 takes it to 9, PR-3 to 13. Counting from both the plan's
- * table and the implementation is what keeps the two from drifting apart.
+ * The count is part of the contract and is asserted in toolsList.test.ts,
+ * which grew from 3 to 9 to 13 tools over time. Counting from both the
+ * design's table and the implementation is what keeps the two from drifting
+ * apart.
  */
 import { z } from 'zod'
 

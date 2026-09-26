@@ -4,9 +4,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { advertisedTools, findTool, TOOLS, TOOL_NAMES } from './toolsList.ts'
 
-test('PR-3 ships exactly thirteen tools', () => {
-  // The count is a contract with the plan's tool table: 3 after PR-1, 9 after
-  // PR-2, 13 here. A tool added without updating the plan trips this.
+test('exactly thirteen tools are shipped', () => {
+  // The count is a contract with the design's tool table, which grew from
+  // 3 to 9 to 13 tools over time. A tool added without updating that table
+  // trips this.
   assert.equal(TOOLS.length, 13)
   assert.deepEqual(TOOL_NAMES, [
     'wallet_status',
@@ -25,13 +26,14 @@ test('PR-3 ships exactly thirteen tools', () => {
   ])
 })
 
-test('the PR-3 tools are exposed, and wallet_export_seed stays last', () => {
+test('plan, swap, bridge and policy_set are exposed, and wallet_export_seed stays last', () => {
   for (const name of ['plan', 'swap', 'bridge', 'policy_set']) {
-    assert.ok(TOOL_NAMES.includes(name), `${name} must be listed in PR-3`)
+    assert.ok(TOOL_NAMES.includes(name), `${name} must be listed among the shipped tools`)
   }
   // Ordering is not cosmetic: a model reads tools/list top to bottom, and the
   // one that reveals the recovery phrase should not sit among the routine
-  // ones. It was last in PR-1 and PR-2; adding four tools must not move it.
+  // ones. It has stayed last through every round of tools added; adding more
+  // tools must not move it.
   assert.equal(TOOL_NAMES[TOOL_NAMES.length - 1], 'wallet_export_seed')
 })
 
@@ -137,7 +139,7 @@ test('the zod schema never goes on the wire', () => {
 
 test('findTool answers only for listed names', () => {
   assert.ok(findTool('wallet_status'))
-  assert.ok(findTool('swap'), 'swap is listed as of PR-3')
+  assert.ok(findTool('swap'), 'swap is listed among the shipped tools')
   // An unlisted name must not resolve. `swap` used to be the example here
   // because it did not exist yet; a name that becomes real is a weak negative,
   // so this one is chosen to stay unlisted.

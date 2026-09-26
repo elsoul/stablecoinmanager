@@ -4,13 +4,13 @@
  * 🔴 FOURTH attempt at one shape, so the history is worth keeping short and
  * exact:
  *
- *   1. PR-4 B-2 -- the reservation could COMPUTE a refusal and ignore it.
+ *   1. The reservation could COMPUTE a refusal and ignore it.
  *      Closed by moving the decision into `reserveDecision`.
- *   2. #14074 N-1 -- the branch could COMPUTE the prose and not spread it.
+ *   2. The branch could COMPUTE the prose and not spread it.
  *      Closed by moving the prose into `refusalReasons`.
- *   3. #14077 (cyan) -- the branch could CALL `refusalReasons` and truncate
+ *   3. The branch could CALL `refusalReasons` and truncate
  *      it: `refusalReasons(reservation).slice(0, 1)` satisfies both backstop
- *      assertions and leaves 248 pass / 0 fail. Measured.
+ *      assertions and leaves the suite green. Measured.
  *
  * Each fix moved the decision one step further out and left the last step at
  * the call site, where node cannot reach it -- `x402Pay` imports
@@ -25,9 +25,7 @@
  * version of this paragraph named spread-override
  * (`{ ...refusalFor(...), warnings: [] }`) as the surviving gap. It is not:
  * the backstop anchors the branch to `return refusalFor(reservation, chosen)`
- * at end of statement, and the mutation reddens (cyan, #14077 -- and the
- * claim contradicted a control in its own commit, which is the same defect
- * this branch corrected one commit earlier).
+ * at end of statement, and the mutation reddens.
  *
  * What was open and is now CLOSED (both were measured at 251 pass / 0 fail
  * before the Reach guard in refusal.test.ts, and redden after it):

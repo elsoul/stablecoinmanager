@@ -37,7 +37,7 @@ const RESULTS: Record<string, unknown> = {
   // eth_chainId, so without these the detector covered the reachability check
   // and not the tool that reads money. Same transport, but "same transport" is
   // an inference and this file exists because an inference about this
-  // transport was wrong in production (#14063).
+  // transport was wrong in production.
   getBalance: { context: { slot: 1 }, value: 1234567890 },
   eth_getBalance: '0x1bc16d674ec80000',
 }

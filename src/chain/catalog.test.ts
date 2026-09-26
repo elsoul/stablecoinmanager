@@ -48,7 +48,7 @@ test('the real catalogue yields real routes, on the chains measured in the plan'
   // symbol is its contract address; the `discovered-` marker is on the id.
   // The earlier version of this assertion tested the symbol and matched 0 of
   // 70 tokens -- it could not fail, while 20 of 32 routes went through a
-  // discovered token (steiner B-2, #14054).
+  // discovered token.
   for (const r of routes) {
     for (const id of [r.inputTokenDeploymentId, r.outputTokenDeploymentId]) {
       assert.match(id, /^deployment-\d+$/, `unreviewed token routed: ${id}`)

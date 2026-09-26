@@ -12,18 +12,17 @@
  * CEILING. It deliberately takes only `env` and cannot reach the ledger, so
  * nothing the worker stores at runtime can raise it.
  *
- * Runtime overrides exist as of PR-3 and may only TIGHTEN. They are composed
+ * Runtime overrides exist and may only TIGHTEN. They are composed
  * on top of this by `lib/effectivePolicy.ts`, read via
  * `route/mcp/policyFor.ts`, and every tool enforces the EFFECTIVE result --
  * `policy_set` is the one caller that compares against this ceiling.
  *
- * 🔴 That wiring is the whole point, and it was missing when PR-3 was first
- * opened: `policy_set` wrote overrides while x402_pay and erpc_topup still
+ * 🔴 That wiring is the whole point, and it was missing at one point:
+ * `policy_set` wrote overrides while x402_pay and erpc_topup still
  * called `loadPolicy` directly, so a tightened ceiling was silently inert and
  * the tool reported success. A reader who believes an override is in effect
  * believes a ceiling is NARROWER than it is, and that is the expensive
- * direction (gilgamesh B1 / steiner B-1, #14054; first reported as
- * gilgamesh N2 / steiner N-3 on #14018).
+ * direction.
  */
 import { BASE_MAINNET_CAIP2_NETWORK } from '@constants/base'
 import type { Env } from '@/types/env'
@@ -120,8 +119,8 @@ declare const EFFECTIVE: unique symbol
  * blocked first by fixing the wiring, then by a test that greps the tool
  * sources for `loadPolicy(`. Both gates then showed the grep loses:
  * `(await effectivePolicy(env)).ceiling` reintroduced the exact defect with
- * 211 tests green (steiner B-6), and so did
- * `import { loadPolicy as readPolicy }` (gilgamesh R2-N1).
+ * 211 tests green, and so did
+ * `import { loadPolicy as readPolicy }`.
  *
  * Text pins lose because they enumerate spellings, and a spelling is free to
  * invent. A type does not enumerate: `checkPayment` takes a policy that only
@@ -134,7 +133,7 @@ declare const EFFECTIVE: unique symbol
  * 🔴 It is NOT total, and the limit belongs here rather than in a reviewer's
  * head. `applyOverrides(loadPolicy(env), {})` mints a legitimate brand from a
  * ceiling using no cast and no banned identifier, and only the backstop grep
- * stops it (gilgamesh, #14054). An unqualified completeness claim would be
+ * stops it. An unqualified completeness claim would be
  * the same defect as the curation docblock that declared a rule the
  * implementation did not have. `Readonly` additionally closes mutating a
  * well-obtained effective policy in place -- including
@@ -142,7 +141,7 @@ declare const EFFECTIVE: unique symbol
  * alone left open because it does not reach into array fields, and which are
  * exactly the two ceilings `policy_set` refuses to override on the grounds
  * that they are "to whom and in what" rather than "how much"
- * (steiner N-16, #14054). Spreading an effective policy into a wider copy
+ *. Spreading an effective policy into a wider copy
  * stays reachable, and that is a deliberate act rather than a misspelling.
  *
  * This is the same move `lib/settle.ts` made for the settle decision, for the
@@ -156,8 +155,7 @@ export type EffectivePolicyValue = Readonly<Policy> & { readonly [EFFECTIVE]: tr
  * 🔴 ALL FOUR comparisons, not just the two about money. The first version of
  * this guard covered `maxEurcPerPayment` and `maxEurcPerDay` and left
  * `maxSlippageBps` and `maxDeadlineSeconds` comparing against a possible NaN
- * -- where `x > NaN` is false and the brake becomes a pass (steiner N-1,
- * #14067).
+ * -- where `x > NaN` is false and the brake becomes a pass.
  *
  * Scope, measured: neither production path can currently produce a non-finite
  * ceiling. `numberVar` throws on 'NaN', 'Infinity' and '1e999', and
@@ -165,7 +163,7 @@ export type EffectivePolicyValue = Readonly<Policy> & { readonly [EFFECTIVE]: tr
  * defense-in-depth, and the reason to make it symmetric is not a live leak --
  * it is that two of four comparisons being guarded reads as a decision about
  * the other two. That asymmetry is the shape this package has been closing
- * all through #14054 and #14067.
+ * throughout.
  *
  * Direction: ceilings fall to 0 (refuse everything) and spend totals rise to
  * Infinity (refuse everything). Both ends move toward refusal; reversing
@@ -222,7 +220,7 @@ export function checkPayment(
   // incomplete: normalisation reached plan/swap/bridge but stopped short of
   // the payment gate, so declaring CAIP-2 canonical opened a NEW trap -- an
   // operator following the remediation text would see plan and swap say
-  // "allowed" while every Solana 402 was refused here (steiner B-7, #14054).
+  // "allowed" while every Solana 402 was refused here.
   if (!policy.allowedNetworks.allows(intent.network)) {
     violations.push({
       kind: 'network_not_allowed',

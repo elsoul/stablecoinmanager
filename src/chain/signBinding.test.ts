@@ -9,7 +9,7 @@ import {
 } from './x402Client.ts'
 
 // ---------------------------------------------------------------------------
-// The defect this file exists for (gilgamesh, #14018 B1):
+// The defect this file exists for:
 //
 // Every check x402_pay makes -- per-payment ceiling, daily ceiling, treasury
 // fence, EURC-only for top-ups, the ledger row -- is computed from the
@@ -138,7 +138,7 @@ test('control: signing the FIRST requirement is what a correct binding must prev
 // entirely and they stay green -- so the suite proved barrier 1, not two
 // independent barriers. Barrier 2 exists because barrier 1 depends on SDK
 // behaviour this worker does not own, and a defence whose only evidence is
-// the other defence working has not been verified (gilgamesh N6, #14018).
+// the other defence working has not been verified.
 //
 // These drive it directly with payloads a broken barrier 1 would produce.
 // ---------------------------------------------------------------------------

@@ -1,4 +1,8 @@
-# StableCoinManager MCP
+# StableCoinManager by ERPC
+
+An MCP server that manages stablecoin payments for AI agents: it reads a service's x402 payment requirements, swaps whatever the agent's wallet holds into the required stablecoin on Uniswap, bridges when the funds sit on another network, pays, and keeps receipts and spending limits — all over the RPC line via erpc-sdk.
+
+ETHGlobal Tokyo 2026 · Continuity Track. ERPC (erpc.global, AS200261), erpc-sdk and ERPC's x402 storefront are the existing project; the MCP server, routing/quote logic, Uniswap swap + bridge execution and the policy/audit layer are built in this repository during September 25–27, 2026.
 
 **An AI agent that can pay for things on its own, with spending limits it cannot argue its way past.**
 
@@ -136,7 +140,7 @@ The order is the design (`src/route/mcp/tools/x402Pay.ts`):
 ## Quickstart
 
 ```bash
-claude mcp add --transport http scm https://mcp-stablecoin-manager.erpc.global/mcp
+claude mcp add --transport http scm https://<your-domain>/mcp
 ```
 
 Log in with Google. An account outside `ALLOWED_GOOGLE_EMAILS` gets a 403,
@@ -194,25 +198,15 @@ The worker signs only x402 requirements on EVM networks (`eip155:*`) using the
 
 ## What has and has not been exercised
 
-**Nothing in this worker has moved real money yet.** The payment path follows
-the one client in this repository that has settled a top-up,
-`api/erpc/x402-rpc-api/.e2e-local/run-e2e-topup.mjs`. It is verified by tests
-that run the x402 SDK, not by a live settlement. The production canary (a
-1-credit ERPC top-up) has not been run. The worker's EVM address was funded
-on 2026-09-24 — 1.5 EURC, read from outside the worker with an `eth_call`
-`balanceOf` against Base (`0x16e360`), since the worker itself cannot read
-Base balances yet (W1). What is still missing is an explicit go-ahead for an
-irreversible on-chain payment, not funds. Until it runs,
-every claim here about paying is a claim about code, not about an outcome.
-`swap` and `bridge` stop before signing for the same reason.
-
-The flow the worker automates, Claude buying ERPC credit with EURC on Base,
-was demonstrated on 2026-09-18/19 with a local laptop wallet. This worker is
-the deployed form of that demo, with the wallet no longer on a laptop (plan:
-`docs/superpowers/plans/2026-09-21-stablecoin-manager-mcp.md`).
-
-This section lives in the README rather than only in a PR description because
-this repository squashes merges, so a PR body is not what a future reader finds.
+**Nothing in this worker has moved real money yet.** The payment path is
+verified by tests that run the x402 SDK, not by a live settlement. A
+production canary (a small real top-up) has not been run. The worker itself
+cannot read Base balances yet (see "Chain access" below), so a funded
+wallet's balance can only be confirmed from outside the worker. What is
+still missing is an explicit go-ahead for an irreversible on-chain payment,
+not funds. Until it runs, every claim here about paying is a claim about code,
+not about an outcome. `swap` and `bridge` stop before signing for the same
+reason.
 
 ---
 
@@ -264,112 +258,15 @@ MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ auth-ap
 - **Two producers of an accepted token, both in `route/oauth/token.ts`:**
   1. the authorization-code grant. `route/oauth/callback.ts` writes a code
      only after state verifies under this worker's `OAUTH_STATE_SECRET`, the
-     client and `redirect_uri` are registered, and the allowlist passes. On
-     the default (`erpc-auth-api`) path the upstream verifier comes from
-     inside that signed state; see "`AUTH_PROVIDER`: erpc-auth-api (default)
-     vs app-oidc" below for where it lives on the `app-oidc` path instead.
+     upstream verifier comes from inside that signed state, the client and
+     `redirect_uri` are registered, and the allowlist passes.
   2. the refresh grant. Refresh tokens are single-use, rotated, and bound to
      the client they were issued to.
 - **Registration is allowlisted** to the hosted Claude and ChatGPT callbacks
   and RFC 8252 loopback.
 
-### `AUTH_PROVIDER`: erpc-auth-api (default) vs app-oidc
-
-| `AUTH_PROVIDER` | identity provider | required vars |
-|---|---|---|
-| unset or `erpc-auth-api` (default) | auth-api (`?provider=google`) | `AUTH_API_BASE_URL`, `AUTH_API_CLIENT_ID` |
-| `app-oidc` | the app-oidc-api broker | `APP_OIDC_ISSUER`, `APP_OIDC_CLIENT_ID` |
-
-A third-party deploy of this template that wants its own Google login (rather
-than reusing auth-api, which is ERPC's own) sets `AUTH_PROVIDER=app-oidc` and
-points at the broker (`api/app-oidc-api`). The deploy-time assertion in
-`src/lib/productionConfig.ts` checks this in one direction only: the default
-(`erpc-auth-api`) config is refused if `APP_OIDC_ISSUER` or `APP_OIDC_CLIENT_ID`
-is present, on the assumption that it is a switch someone started and did not
-finish. Going
-the other way, an `app-oidc` config is not required to omit `AUTH_API_*` --
-those vars are simply not read on that path, and their presence is not
-checked either way.
-
-**Upstream PKCE verifier storage differs from the erpc-auth-api path.** The
-default path carries its upstream verifier inside the HMAC-signed `state`
-blob (see `utils/state.ts`). The app-oidc path does not: the verifier goes
-into `MCP_KV` under `oidc_txn:<hex(sha256(state))>`, TTL 600 seconds, read and
-deleted (single use) on the matching callback. `grep -n upstreamVerifier
-src/utils/appOidc.ts` is 0 -- that file never reads or writes the state field.
-
-**Broker key-rotation upper bound.** If the broker drops a compromised signing
-key, this worker keeps accepting a token signed with it for at most
-JWKS max-age (≤ 300s) + id_token `exp` (300s) + clock leeway (30s) = **630
-seconds** after the broker's own deploy completes. This bound only covers
-*new* logins: an MCP access token or refresh token this worker already issued
-before the compromise is unaffected by the broker's rotation -- it can only be
-revoked here, by rotating `JWT_SECRET` / `REFRESH_TOKEN_SECRET` or by removing
-the address from `ALLOWED_GOOGLE_EMAILS` (re-checked on every `/mcp/*` call).
-
-Two independent things keep an owner's login from becoming someone else's
-capability.
-
-**① Who the code can go to** is decided by the DCR redirect allowlist
-(`route/oauth/client.ts` `isAllowedRedirectUri`). Dynamic registration is
-open by design, so this allowlist carries the whole weight on the
-registration path -- widening it widens who can be handed an authorization
-code for this wallet. Concretely: without it, an attacker could register
-their own client, start a login, and if the owner completes that login in
-their own browser, it is the attacker's client -- not the owner -- that ends
-up holding the code and the access token it exchanges for. This does not
-overlap with (a), (b) or (c) below; it is re-checked at registration time,
-and again at every subsequent lookup (`route/oauth/authorize.ts`,
-`route/oauth/callback.ts`, `route/oauth/token.ts` all call
-`getRegisteredClient`, which re-validates every stored `redirect_uri` against
-`isAllowedRedirectUri` on each call -- `route/oauth/client.ts` L93).
-
-Three narrower things, together, decide whether the person completing a
-login through an already-registered client is the owner:
-
-(a) *(app-oidc path only)* an attacker who intercepts the upstream
-    authorization `code` cannot redeem it: the PKCE verifier it must be
-    paired with lives only in this worker's `MCP_KV` (`oidc_txn:`), never in
-    a value that leaves the worker. The default (`erpc-auth-api`) path does
-    not have this property -- its upstream verifier travels inside the
-    signed `state` blob instead (issue #14171; see "Upstream PKCE verifier
-    storage differs..." above).
-(b) on both paths, the MCP authorization code the callback produces is
-    itself bound to the downstream PKCE pair (S256) the MCP client set up,
-    so possessing that code is not enough on its own to redeem it;
-(c) an id_token for an account this worker does not own cannot become an MCP
-    authorization code: the email allowlist (`evaluateLogin`,
-    `ALLOWED_GOOGLE_EMAILS`) runs, and runs before the `auth_code:` write, in
-    `route/oauth/callback.ts`.
-
-(a) does not depend on any of the conditions below -- it is a property of
-the app-oidc path itself. (b) and (c) hold only while:
-
-① the DCR redirect allowlist is not widened (`route/oauth/client.ts`
-   `isAllowedRedirectUri`) -- protects the "who the code can go to" question
-   above, on its own;
-② the downstream PKCE (S256) requirement is not removed
-   (`route/oauth/authorize.ts`, `route/oauth/token.ts`) -- protects (b);
-③ the email allowlist decision still runs, and still runs before the
-   `auth_code:` write, in `route/oauth/callback.ts` -- protects (c).
-
-A template deployer who widens ① breaks that guarantee for their own
-deploy, regardless of anything in this file.
-
-**Declared deviation from RFC 9700 §2.1.1, on the app-oidc path**: that
-section requires binding the PKCE `code_challenge`/nonce to both the client
-and the user agent. On the app-oidc path, the client-side binding is the
-upstream verifier this worker holds in `MCP_KV` (a above); there is no
-user-agent binding -- no cookie ties a login attempt to the browser that
-started it. That binding is deferred to a later phase; ①, ② and ③ above,
-together, are what stand in for it in the meantime. The default
-(`erpc-auth-api`) path does not have even the client-side binding in the
-RFC's sense, since its upstream verifier lives in the signed `state` value
-rather than server-side storage -- the same issue #14171 exposure noted
-under (a).
-
 Why this shape: an auth-api access token on its own proves only that someone
-completed a Google login somewhere (issue #13969). It is not a capability for
+completed a Google login somewhere. It is not a capability for
 this wallet, so the worker never treats it as one.
 
 What is *not* claimed: immunity to a compromise of `OAUTH_STATE_SECRET` or
@@ -424,18 +321,18 @@ request, and the facilitator submits the transaction.
 
 ### Deploying
 
-The KV namespace already exists (`mcp-stablecoin-manager-MCP_KV`,
-`ad68f65964514401871ce3ba1d3bab66`) and its id is in `wrangler.toml`. CI
-deploys on push to main. What CI does **not** do is set secrets:
+Create the KV namespace once (`wrangler kv namespace create MCP_KV`) and put
+its id in `wrangler.toml`. A deploy pipeline of your choosing can then run
+`wrangler deploy` on every push. What no CI should ever do is set secrets:
 
 ```bash
 # All five runtime secrets are operator-set, once. `wrangler deploy` preserves
-# them, so CI redeploys do not disturb them.
-pnpm -F mcp-stablecoin-manager exec wrangler secret put JWT_SECRET
-pnpm -F mcp-stablecoin-manager exec wrangler secret put REFRESH_TOKEN_SECRET
-pnpm -F mcp-stablecoin-manager exec wrangler secret put OAUTH_STATE_SECRET
-pnpm -F mcp-stablecoin-manager exec wrangler secret put ERPC_API_KEY
-pnpm -F mcp-stablecoin-manager wallet:init     # generates and pipes the mnemonic
+# them, so redeploys do not disturb them.
+pnpm exec wrangler secret put JWT_SECRET
+pnpm exec wrangler secret put REFRESH_TOKEN_SECRET
+pnpm exec wrangler secret put OAUTH_STATE_SECRET
+pnpm exec wrangler secret put ERPC_API_KEY
+pnpm wallet:init     # generates and pipes the mnemonic
 ```
 
 🔴 **Immediately after `wallet:init`, take the offline backup.** Log in over
@@ -463,45 +360,34 @@ missing, and `/health` reports `config: "incomplete"` with the list. A worker
 that booted and signed tokens with `undefined` would be worse than one that
 refuses.
 
-**Why the OAuth secrets are not synced from GitHub:** this repository is at
-GitHub's hard limit of 100 Actions secrets, so creating another one returns
-HTTP 400 (measured 2026-09-21). Freeing a slot means deleting someone else's
-secret, which is not this thread's call.
-
-`wrangler.toml` is **hand-managed** and is not generated from `slv.toml`: the
-generator has no schema for `durable_objects` / `new_sqlite_classes`, so
-regenerating would drop the `v1` migration tag and orphan the ledger. Same
-precedent as `api/erpc/x402-rpc-api`.
+`wrangler.toml` is **hand-managed** rather than generated by a config tool: a
+generic generator is unlikely to have a schema for `durable_objects` /
+`new_sqlite_classes`, and regenerating it would drop the `v1` migration tag
+and orphan the ledger.
 
 ### Rolling back a bad deploy
 
-Three different things get called "rolling back" here, and they do not do the
-same thing.
-
-**1. Roll the Worker back to its previous version. This is usually the one you want.**
-
 ```bash
-pnpm -F mcp-stablecoin-manager exec wrangler rollback
+pnpm exec wrangler rollback
 ```
 
 The Durable Object's storage, the KV namespace and the custom domain are all
-untouched. This is the fast, safe operation for a bad deploy.
+untouched. This is the fast, safe operation for a bad deploy -- prefer it
+over reverting a commit and waiting on a fresh deploy when something is
+actively broken.
 
-**2. Revert the service commit.** `api/mcp/stablecoin-manager/**` matches this
-workflow's `paths:`, so the revert itself triggers a deploy of the reverted
-code. This is the normal git path and it does reach production, but it takes
-a CI run, so prefer (1) when something is actively broken.
-
-**3. Revert the whole PR, workflow included.** This is the trap. Removing
-`.github/workflows/cf-mcp-stablecoin-manager.yml` means nothing triggers, so
-**the deployed Worker keeps serving with nothing in the repo that manages it**.
-A revert is not a teardown and, done this way, is not even a rollback.
+⚠️ If your deploy pipeline redeploys automatically on every push to your
+main branch, reverting the commit that introduced a bad change will
+re-trigger a deploy of the reverted code -- but removing the pipeline
+config entirely (rather than reverting the code change) leaves the currently
+deployed Worker running with nothing in the repository managing it anymore.
 
 ### Retiring the worker
 
-Retirement is a different operation with permanent consequences. Reverting the
-PR does not perform it: the deployed Worker, its custom domain, its KV
-namespace and the `WalletLedger` Durable Object all stay live.
+Retirement is a different operation with permanent consequences. Reverting a
+code change does not perform it: the deployed Worker, its custom domain, its
+KV namespace and the `WalletLedger` Durable Object all stay live until you
+tear them down explicitly.
 
 To actually retire it:
 
@@ -509,8 +395,8 @@ To actually retire it:
 # 1. Take the phrase out first, or the funds are unreachable afterwards.
 #    (wallet_export_seed over MCP, then move the funds.)
 # 2. Then, and only then:
-pnpm -F mcp-stablecoin-manager exec wrangler delete
-npx wrangler kv namespace delete --namespace-id ad68f65964514401871ce3ba1d3bab66
+pnpm exec wrangler delete
+npx wrangler kv namespace delete --namespace-id <your-kv-namespace-id>
 ```
 
 `wrangler delete` destroys the Durable Object's storage, which is the ledger:
@@ -553,16 +439,17 @@ funded, and not left until it is needed.
 ### Local development
 
 ```bash
-pnpm -F mcp-stablecoin-manager dev
-pnpm -F mcp-stablecoin-manager check   # tsc, source and tests
-pnpm -F mcp-stablecoin-manager test
+pnpm dev
+pnpm check   # tsc, source and tests
+pnpm test
 ```
 
-The dev callback is `https://dev-mcp-stablecoin-manager.erpc.global:8787`, a
-subdomain we own, mapped to `127.0.0.1` in `/etc/hosts` and served with
+`wrangler.dev.toml` uses `https://dev-<your-domain>:8787` as the dev callback,
+a subdomain you own, mapped to `127.0.0.1` in `/etc/hosts` and served with
 `--local-protocol https --port 8787`. Raw `localhost` / `127.0.0.1` is
-deliberately **not** a registered redirect_uri on auth-api. That pin keeps an
-authorization code from being delivered to a host we do not own.
+deliberately **not** a registered redirect_uri with your OAuth identity
+provider. That pin keeps an authorization code from being delivered to a host
+you do not own.
 
 ---
 

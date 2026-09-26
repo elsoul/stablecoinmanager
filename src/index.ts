@@ -41,8 +41,9 @@ app.use(
 )
 
 // A worker that boots, accepts a login and signs tokens with `undefined` is
-// worse than one that refuses. Secrets are operator-set here (slv.toml says
-// why), so a fresh deployment genuinely starts without them.
+// worse than one that refuses. Secrets are operator-set with `wrangler secret
+// put` rather than synced from any CI system, so a fresh deployment
+// genuinely starts without them.
 app.use('/oauth/*', async (c, next) => {
   const missing = missingOAuthSecrets(c.env)
   if (missing.length > 0) {

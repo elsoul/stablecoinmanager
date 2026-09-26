@@ -7,8 +7,8 @@
  * truth for "did we already pay this?" -- a stale read there is a double
  * payment.
  *
- * PR-1 ships the schema and the read paths. The money paths (x402_pay,
- * erpc_topup) land in PR-2 and write through this object.
+ * This object ships the schema and the read paths. The money paths
+ * (x402_pay, erpc_topup) write through it too.
  */
 import { DurableObject } from 'cloudflare:workers'
 import type { Env } from '@/types/env'
@@ -74,7 +74,7 @@ export class WalletLedger extends DurableObject<Env> {
         updated_at INTEGER NOT NULL
       );
 
-      -- Deliberately NOT policy_overrides. That table is what PR-2's
+      -- Deliberately NOT policy_overrides. That table is what
       -- policy_set writes to, and the seed-export throttle must not be
       -- something a policy tool can extend, clear or even see. Separated
       -- before the first deploy, because after v1 has rows in production
@@ -158,7 +158,7 @@ export class WalletLedger extends DurableObject<Env> {
 
     // 🔴 The WHOLE decision, including the policy check, comes back from one
     // pure function. Nothing here can compute a refusal and then ignore it,
-    // because nothing here computes one (steiner B-2, #14067).
+    // because nothing here computes one.
     const decision = reserveDecision({
       existing: existing[0],
       spentTodayEurc: spentRows[0]?.total ?? 0,
@@ -194,7 +194,7 @@ export class WalletLedger extends DurableObject<Env> {
    * a network probe of the resource. A `policy_set` landing inside that window
    * was written, acknowledged, and then not applied to the payment already in
    * flight: precisely the payment an operator tightening a ceiling during an
-   * incident is trying to stop (steiner N-11, #14054).
+   * incident is trying to stop.
    *
    * 🔴 ALL FOUR overridable ceilings, not just the daily one. The first
    * version of this read `maxEurcPerDay` alone and its docblock claimed the
@@ -202,7 +202,7 @@ export class WalletLedger extends DurableObject<Env> {
    * `maxSlippageBps` and `maxDeadlineSeconds` still came from the caller's
    * stale read, so tightening the per-payment limit mid-flight let a payment
    * through that a fresh check refused -- fail-OPEN, in the one feature whose
-   * purpose is to stop a payment (steiner B-1, #14067). That was the fifth
+   * purpose is to stop a payment. That was the fifth
    * unqualified completeness claim this package has been caught making, which
    * is why the fix is to close the window rather than to qualify the sentence.
    *
@@ -226,7 +226,7 @@ export class WalletLedger extends DurableObject<Env> {
    * a refusal -- and the shipped `[vars]` are byte-identical to those
    * defaults, so the two are indistinguishable from the outside. An earlier
    * version of this comment claimed the opposite and sent a reader looking
-   * for a refusal that would not come (cyan B-2/B-3, #14067). The executable
+   * for a refusal that would not come. The executable
    * form of both facts is in `lib/reserve.test.ts`.
    *
    * The `try` also spans the SELECT, but nothing else on this path throws:
@@ -234,8 +234,7 @@ export class WalletLedger extends DurableObject<Env> {
    * `blockConcurrencyWhile`, and none of the three modules the call reaches
    * -- `lib/reserve.ts` (`policyFromLedger`, `policyFromOverrideRows`),
    * `lib/effectivePolicy.ts`, `lib/policyOverride.ts` -- contains an
-   * executable `throw` (cyan N-4, #14067: the earlier list named two of the
-   * three, and the one it omitted is the entry point).
+   * executable `throw`.
    */
   private effectivePolicy(sql: SqlStorage): EffectivePolicyValue {
     try {
@@ -258,8 +257,7 @@ export class WalletLedger extends DurableObject<Env> {
    * receipt the operator reads, while the money is long gone.
    *
    * No money is lost either way, which is exactly why it is worth guarding:
-   * the damage is to the record, and a wrong record is what someone acts on
-   * (steiner N-1 / gilgamesh N4, #14018).
+   * the damage is to the record, and a wrong record is what someone acts on.
    */
   async settlePayment(input: {
     idempotencyKey: string

@@ -8,7 +8,7 @@ import { ERPC_TREASURY_BASE, loadPolicy } from '@/lib/policy'
 import { throttleIsLive } from '../lib/throttle.ts'
 
 // ---------------------------------------------------------------------------
-// The Durable Object's migration had never been executed anywhere: no PR-1
+// The Durable Object's migration had never been executed anywhere: no
 // route instantiates the DO, `wrangler dev` does not run it on boot, and the
 // type checker does not read SQL. The first execution would have been the
 // first production request -- where a syntax error takes the whole ledger with
@@ -235,8 +235,7 @@ test('SOURCE: claimExportThrottle contains no await', () => {
   //
   // An earlier revision asserted the same thing about appendAudit here. That
   // was removed: a failure in appendAudit would have reddened a test named
-  // after claimExportThrottle, pointing the next reader at the wrong method
-  // (steiner, #13980 N-2).
+  // after claimExportThrottle, pointing the next reader at the wrong method.
   assert.ok(/INSERT INTO throttles\s*\(/.test(body))
 })
 
@@ -248,7 +247,7 @@ test('SOURCE: claimExportThrottle uses the shared throttle guard', () => {
 })
 
 test('SOURCE: reservePayment contains no await', () => {
-  // steiner's PR-2 acceptance condition, and the same mechanism as
+  // The acceptance condition here, and the same mechanism as
   // claimExportThrottle: Durable Objects serialise METHOD CALLS, not the span
   // across an `await`. Reading today's total in one call and inserting in
   // another lets two payments interleave and both pass a ceiling only one of
@@ -265,7 +264,7 @@ test('SOURCE: reservePayment contains no await', () => {
 })
 
 test('SOURCE: the effective policy is decided inside the reservation, not handed in', () => {
-  // 🔴 steiner N-11. The overrides feature opened a read-then-act window that
+  // 🔴 The overrides feature opened a read-then-act window that
   // did not exist before it: `x402Pay` read the effective ceiling at the top
   // of the request and passed it down, with a DO round trip and a network
   // probe of the resource in between. A `policy_set` landing in that window
@@ -300,7 +299,7 @@ test('SOURCE: the effective policy is decided inside the reservation, not handed
     reserve.includes('this.effectivePolicy(sql)'),
     'it must compose the policy inside its own turn',
   )
-  // 🔴 steiner B-2: the reservation must not be able to compute a refusal
+  // 🔴 The reservation must not be able to compute a refusal
   // and ignore it. It cannot, because it does not compute one -- the whole
   // decision arrives from `reserveDecision`, which node drives directly.
   assert.ok(
@@ -326,8 +325,8 @@ test('SOURCE: the pending row is written by the same method that checks', () => 
 // The anchored `INSERT INTO payments (` above catches one table's name drifting
 // in one method. It does not catch a COLUMN that the DDL never declared, and it
 // does not look at the other eleven statements at all -- and every one of those
-// has the same property that made the `transaction` keyword survive to PR-1:
-// the type checker does not read SQL, so the first execution of any of them is
+// has the same property that let the `transaction` keyword survive
+// undetected: the type checker does not read SQL, so the first execution of any of them is
 // the first production request that reaches that method.
 //
 // So every statement in the Durable Object is prepared against the schema the
@@ -356,10 +355,10 @@ test('every query in the Durable Object prepares against the real schema', () =>
   //
   // 13: `policyOverrides` was retyping the same SELECT that
   // `OVERRIDE_ROWS_SQL` already holds, so there were two copies of one query
-  // in this file (cyan N-3). It now uses the constant, and the extractor --
-  // which only sees literals here -- counts one fewer. It was 14 earlier in
-  // PR-4, 15 briefly, 14 in PR-3, 12 in PR-2, and this guard reported every
-  // one of those moves rather than absorbing them.
+  // in this file. It now uses the constant, and the extractor --
+  // which only sees literals here -- counts one fewer. The count has moved
+  // several times as statements were added and consolidated, and this guard
+  // reported every one of those moves rather than absorbing them.
   assert.equal(queries.length, 13, 'extractor still finds the DO statements')
 
   for (const query of queries) {
@@ -456,7 +455,7 @@ test('SOURCE: x402Pay delegates the post-resend decision, it does not re-derive 
   // This replaces a set of textual pins. Three re-introductions of one
   // fail-open were caught here by pinning shapes (B-2, C-1, O-3), and each
   // pin only covered the shapes someone had thought of -- O-3 was still open
-  // when PR-2 merged because `if (!accepted)` could be narrowed without
+  // at one point because `if (!accepted)` could be narrowed without
   // touching any pinned line.
   //
   // The decision now lives in lib/settle.ts, which node CAN load, and is
@@ -567,10 +566,10 @@ test('SOURCE: the synchronous grant records its invoice number', () => {
   // erpc_topup's poll loop, whose condition is `status !== 'granted'`, and
   // with `settled` terminal there is no later repair either -- so if x402_pay
   // does not read it here, the tool's promise to report an invoice number
-  // silently fails on the fastest, most ordinary outcome (steiner N-7).
+  // silently fails on the fastest, most ordinary outcome.
   const body = methodBody('x402Pay', 'route/mcp/tools/x402Pay.ts')
   // Anchored on a marker that still exists. This slice used to start at
-  // `const accepted =`, which PR-3 renamed when the decision moved into
+  // `const accepted =`, which was renamed when the decision moved into
   // lib/settle.ts -- indexOf returned -1, slice(-1) returned one character,
   // and the test failed saying the settle call was missing rather than saying
   // its anchor was. A slice anchor is a dependency like any other.
@@ -609,8 +608,7 @@ test('SOURCE: signPayment actually calls barrier 2', () => {
   //
   // This package has been here before. In round 1 the EURC-only top-up
   // restriction was "only as real as one unchecked wire" -- the control did
-  // not fire until a SOURCE test pinned the call site. Same fix, same reason
-  // (steiner B-6, #14018).
+  // not fire until a SOURCE test pinned the call site. Same fix, same reason.
   const body = methodBody('signPayment', 'chain/x402Client.ts')
   assert.match(
     body,
@@ -642,7 +640,7 @@ test('SOURCE: erpc_topup seeds its invoice number from the payment response', ()
   // on the synchronous grant; erpc_topup's OWN answer was still built from a
   // variable only the poll loop assigns, and that loop never runs when the
   // grant completed inline (`status !== 'granted'`). So the tool promised an
-  // invoice number and returned none on the fastest outcome (steiner N-10).
+  // invoice number and returned none on the fastest outcome.
   const source = readFileSync(
     join(import.meta.dirname, '..', 'route', 'mcp', 'tools', 'erpcTopup.ts'),
     'utf8',
@@ -658,7 +656,7 @@ test('SOURCE: erpc_topup seeds its invoice number from the payment response', ()
 })
 
 // ---------------------------------------------------------------------------
-// PR-3: policy overrides. The override and its audit row must land together,
+// Policy overrides. The override and its audit row must land together,
 // and the same no-await rule applies as for reservePayment.
 // ---------------------------------------------------------------------------
 
@@ -673,7 +671,7 @@ test('SOURCE: setPolicyOverride contains no await', () => {
 })
 
 test('REACH: an override written to the real table refuses the next payment', () => {
-  // 🔴 gilgamesh R2-N1. The binding "an override that lands mid-request binds
+  // 🔴 The binding "an override that lands mid-request binds
   // to THIS payment" was held by a SOURCE pin alone, and the pin passes a
   // broken implementation: `policyFromOverrideRows(loadPolicy(env), rows)`
   // changed to `(..., [])` keeps every token the pin looks for -- the SELECT,
@@ -717,7 +715,7 @@ test('REACH: an override written to the real table refuses the next payment', ()
   )
 
   // Now an operator tightens the per-payment limit -- the key the first
-  // version of this fix did not read at all (steiner B-1).
+  // version of this fix did not read at all.
   db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerPayment', '5', 1000)
   const refused = reserveDecision({
     existing: undefined,
@@ -752,7 +750,7 @@ test('the override and its audit row land together, against the real schema', ()
   assert.ok(upsert && audit, 'both statements extracted from the real source')
 
   db.prepare(upsert[0].slice(1, -1)).run('maxEurcPerDay', '20', 1000)
-  db.prepare(audit[0].slice(1, -1)).run(1000, 'f.kawasaki@elsoul.nl', 'policy_set', 'maxEurcPerDay: 200 -> 20')
+  db.prepare(audit[0].slice(1, -1)).run(1000, 'owner@example.com', 'policy_set', 'maxEurcPerDay: 200 -> 20')
 
   const row = db.prepare(`SELECT value FROM policy_overrides WHERE name = 'maxEurcPerDay'`).get()
   assert.ok(row)
@@ -771,7 +769,7 @@ test('the override and its audit row land together, against the real schema', ()
 })
 
 test('SOURCE: a replay reports the prior OUTCOME, not a bare success', () => {
-  // B-3 had no control at all. Measured by cyan: replacing
+  // An earlier version had no control at all. Measured: replacing
   // `if (priorStatus === 'failed')` with `if (false)` left the whole suite
   // green, so the branch that stops a failed payment replaying as `ok: true`
   // was entirely unguarded.
@@ -813,7 +811,7 @@ test('SOURCE: the status x402_pay reports is the status it wrote', () => {
   // 'pending'. erpc_topup fed that back into settlePayment and demoted the
   // row, losing "the outcome is unknown" from the record. `settled` is
   // terminal so it was safe; `stuck` is not (it can still resolve), which is
-  // exactly why it was demotable (cyan O-1).
+  // exactly why it was demotable.
   const body = methodBody('x402Pay', 'route/mcp/tools/x402Pay.ts')
   // Sliced from the ACCEPTED branch, not from `const accepted =` -- the
   // refusal branch above computes its own settledStatus and writes it too,
@@ -834,5 +832,5 @@ test('SOURCE: the status x402_pay reports is the status it wrote', () => {
 // The pin that used to live here -- "both refusal branches build their prose
 // with the shared function" -- is superseded by route/mcp/refusal.test.ts.
 // It grepped for the builder's NAME, and a branch that called the builder and
-// sliced its answer satisfied it (cyan, #14077). The replacement drives the
+// sliced its answer satisfied it. The replacement drives the
 // finished ToolResult instead.

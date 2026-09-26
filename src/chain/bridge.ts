@@ -46,7 +46,7 @@ export function bridgeRoute(sourceChainId: string, destinationChainId: string): 
   // worker's own vocabulary says `solana-mainnet`, and BridgeArgs takes free
   // strings -- so `bridgeRoute('eip155:1', 'solana-mainnet')` used to answer
   // "the SDK ships no Mayan capability ... this is not a wishlist gap" about
-  // a capability that exists (steiner B-7, #14054).
+  // a capability that exists.
   const from = canonicalNetwork(sourceChainId)
   const to = canonicalNetwork(destinationChainId)
   const capability = bridgeCapabilities().find(

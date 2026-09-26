@@ -193,7 +193,7 @@ test('surrounding whitespace does not change the derived wallet', () => {
 })
 
 test('evm: the account is reachable only inside withAccount', () => {
-  // 🔴 gilgamesh P1. viem's HDAccount carries `getHdKey` as an OWN ENUMERABLE
+  // 🔴 viem's HDAccount carries `getHdKey` as an OWN ENUMERABLE
   // key -- measured -- and `getHdKey().privateKey` is a public accessor for
   // the private key. Nothing leaked because JSON.stringify drops functions
   // and nobody called it, which is the same "nobody would do that" the Solana
@@ -248,10 +248,10 @@ test('BARRIER: the Solana signer is still unreached from production', () => {
   // `sign()` exists so the derived key can be verified without anyone holding
   // it, and W4 (Solana swap) will need it. Until then it is a signing
   // capability with no caller, so its provenance condition is pinned here
-  // rather than left in a docblock: gilgamesh P2/oracle note, #14067 --
+  // rather than left in a docblock:
   // whatever bytes it signs must be constructed by this worker, never passed
-  // through from a tool argument. PR-2 already paid for a signer that signed
-  // something other than what was checked.
+  // through from a tool argument. An earlier iteration already paid for a
+  // signer that signed something other than what was checked.
   const root = join(import.meta.dirname, '..')
   const callers: string[] = []
   const walk = (dir: string) => {
@@ -283,7 +283,7 @@ test('BARRIER: the Solana signer is still unreached from production', () => {
 })
 
 test('the comment stripper: what it hides, measured rather than assumed', () => {
-  // 🔴 gilgamesh R2-N2. `code()` solved barriers firing on their own warning
+  // 🔴 `code()` solved barriers firing on their own warning
   // text and introduced the mirror failure: it can hide a real violation.
   // That is acceptable only while the limit is known, because `code()` is a
   // backstop behind a structural barrier -- `deriveEvmAccount` is

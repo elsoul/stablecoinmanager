@@ -135,7 +135,7 @@ test('atomic amounts convert without floating point', () => {
 })
 
 test('extra-key drift catches the volatile field that breaks a signature', () => {
-  // #13782: a field appearing inside `extra` between the read that was signed
+  // A field appearing inside `extra` between the read that was signed
   // and the read the server compares against turns a correct signature into
   // price_mismatch.
   assert.deepEqual(extraKeyDrift(['name', 'version'], ['name', 'version']), [])
@@ -157,7 +157,7 @@ test('drift compares SHAPE, not values', () => {
 // ---------------------------------------------------------------------------
 // Top-ups are EURC-denominated by a standing ruling, recorded in
 // constants/base.ts on USDC_BASE_MAINNET_CONTRACT: "USDC on Base is NOT
-// accepted for credit top-ups (Kawasaki 2026-09-10)".
+// accepted for credit top-ups (design decision, 2026-09-10)".
 //
 // The policy's allowed-assets list is a ceiling for generic payments and has
 // no business widening this. The failure it prevents is quiet: a 402 that
@@ -248,8 +248,8 @@ test('SOURCE: erpc_topup actually hands the EURC-only list to x402_pay', () => {
     join(import.meta.dirname, '..', 'route', 'mcp', 'toolsList.ts'),
     'utf8',
   )
-  // Comments stripped first. PR-3 added a docblock saying why the field is
-  // absent, and a predicate that cannot tell prose from a declaration reports
+  // Comments stripped first. A docblock saying why the field is
+  // absent was added at one point, and a predicate that cannot tell prose from a declaration reports
   // the explanation as the violation -- measured. The same fix the mnemonic
   // guard needed.
   const schemaCode = schema
@@ -344,9 +344,9 @@ test('SOURCE: every atomicToDecimal call uses the shared decimals constant', () 
     }
   }
 
-  // Vacuity guard: three call sites. It was four until PR-4 unified the
-  // amount onto the intent and the duplicate `const amountEurc` in x402Pay
-  // went with it (cyan N-1). A change in this number is meant to be read.
+  // Vacuity guard: three call sites. It was four until the amount was
+  // unified onto the intent and the duplicate `const amountEurc` in x402Pay
+  // went with it. A change in this number is meant to be read.
   assert.equal(calls.length, 3, `call sites found:\n${calls.join('\n')}`)
   for (const call of calls) {
     assert.ok(
@@ -361,8 +361,7 @@ test('BARRIER: the asset preference readers require an effective policy', () => 
   // reddened NOTHING -- 0 type errors, 0 failures -- because
   // EffectivePolicyValue is a subtype of Policy, so widening a parameter
   // accepts everything that used to be passed. The barrier had no barrier,
-  // which is the same gap gilgamesh found on NetworkAllowlist at the PR-3
-  // gate (#14054 R5-N2).
+  // which is the same gap found on NetworkAllowlist earlier.
   //
   // The directive below inverts the signal: it becomes TS2578 the moment the
   // expression stops failing, so widening the parameter breaks `pnpm check`.

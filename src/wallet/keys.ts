@@ -41,7 +41,7 @@ export class InvalidMnemonicError extends Error {
 /**
  * 🔴 There is no private-key PROPERTY here, and that is the point.
  *
- * gilgamesh asked (PR-2 N1) for a raw hex key-material pattern in
+ * An earlier review asked for a raw hex key-material pattern in
  * `utils/redact.ts`. Measuring first said not to add one:
  *
  *   - Nothing in this worker turns key material into hex. `getHdKey`,
@@ -92,11 +92,11 @@ export function deriveSolanaKeys(mnemonic: string, accountIndex = 0): SolanaKeys
  * `getHdKey().privateKey` is a public accessor for the private key. Nothing
  * leaks today only because `JSON.stringify` drops functions and because no
  * caller reaches for it, which is the same "nobody would do that" the seed
- * property was relying on (gilgamesh P1, #14067).
+ * property was relying on.
  *
  * Closing one side and leaving the other open is worse than leaving both: an
  * asymmetry reads as "the open one must have had a reason", which is the
- * exact note this package took at the PR-3 gate about one barrier existing
+ * exact note taken elsewhere in this package about one barrier existing
  * without its twin.
  *
  * `withAccount` hands the account to a callback and never returns it, so
@@ -110,7 +110,7 @@ export function deriveSolanaKeys(mnemonic: string, accountIndex = 0): SolanaKeys
  * paths -- spread, serialise, log, a payload that happened to include the
  * signer -- and nothing more. Saying so here because the sibling barriers in
  * `lib/networks.ts` list their escapes, and a missing list reads as an empty
- * one (gilgamesh, #14067).
+ * one.
  */
 export type EvmSigner = {
   address: `0x${string}`

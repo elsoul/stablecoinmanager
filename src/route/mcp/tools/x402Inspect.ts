@@ -61,7 +61,7 @@ export async function x402Inspect(env: Env, args: InspectArgs): Promise<ToolResu
 
   const warnings: string[] = []
 
-  // #13782: a volatile field inside `extra` turns a correct signature into
+  // A volatile field inside `extra` turns a correct signature into
   // `price_mismatch`. Comparing the KEY SET across two reads catches that
   // before money moves; comparing the values would flag every quote refresh.
   let drift: string[] = []

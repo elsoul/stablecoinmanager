@@ -54,7 +54,7 @@ test('REACH: the shipped default allowlist can name a real bridge endpoint', () 
   // allowlist is a separate policy decision. Today it is zero, because the
   // two capabilities the SDK ships run Ethereum mainnet <-> Solana and
   // eip155:1 is deliberately not allowed -- "B-5 is closed" must not be read
-  // as "bridge works in production" (gilgamesh, #14054). Anyone widening the
+  // as "bridge works in production". Anyone widening the
   // allowlist can read this number to see what changed.
   const wholeCapabilities = caps.filter(
     (c) => shipped.allows(c.sourceChainId) && shipped.allows(c.destinationChainId),
@@ -68,7 +68,7 @@ test('REACH: the shipped default allowlist can name a real bridge endpoint', () 
 })
 
 test('REACH: the money path accepts either spelling of an allowed network', () => {
-  // 🔴 The control steiner specified. Normalisation reaching plan/swap/bridge
+  // 🔴 The control this test specifies. Normalisation reaching plan/swap/bridge
   // but stopping before checkPayment meant that declaring CAIP-2 canonical
   // created a NEW trap: an operator writing the CAIP-2 form into the config
   // would see plan and swap answer "allowed" while every Solana 402 was
@@ -124,7 +124,7 @@ test('a real capability is not described as a wishlist gap in the other spelling
   // bridgeRoute('eip155:1', 'solana-mainnet') answered "the SDK ships no
   // Mayan capability ... this is not a wishlist gap" about a capability that
   // exists. `solana-mainnet` is a spelling this worker hands to the model
-  // itself, via holdings and plan.blockedByPolicy (steiner B-7, #14054).
+  // itself, via holdings and plan.blockedByPolicy.
   const route = bridgeRoute('eip155:1', SOLANA_MAINNET_LOCAL)
   assert.equal(route.supported, true, `expected a real capability, got: ${JSON.stringify(route)}`)
   assert.equal(bridgeRoute('eip155:1', SOLANA_MAINNET_CAIP2).supported, true)
@@ -153,7 +153,7 @@ test('the SDK still spells Solana the way the alias expects', () => {
 })
 
 test('BARRIER: the allowlist cannot be searched, only asked', () => {
-  // 🔴 gilgamesh R5-N2: nothing reddened when the barrier type was deleted.
+  // 🔴 Measured: nothing reddened when the barrier type was deleted.
   // `@ts-expect-error` inverts that -- the directive itself becomes an error
   // (TS2578) once the expression stops failing, so weakening
   // NetworkAllowlist back into an array reddens `tsc -p tsconfig.test.json`,
@@ -198,8 +198,7 @@ test('prototype keys are ordinary unknown ids, not inherited properties', () => 
   // swapRefusal threw on `.startsWith`. `plan` takes a free-string chainId
   // and reaches swapRefusal with no allowlist check in front of it, so the
   // input is model-controlled.
-  // 🔴 Derived, not enumerated (gilgamesh R5-N3: the hand-written list was
-  // missing __defineSetter__, __lookupGetter__ and __lookupSetter__). The
+  // 🔴 Derived, not enumerated. The
   // safety does not depend on this list -- Object.hasOwn closes inherited
   // properties as a class -- but a regression detector that enumerates is the
   // exact habit this PR has now paid for four times.
@@ -237,7 +236,7 @@ test('describe() and toJSON() are the named escapes, and they behave as document
   const allowed = networkAllowlist(['eip155:8453', SOLANA_MAINNET_LOCAL])
 
   // toJSON hands back a COPY. Returning the live array gave three
-  // disagreeing views of one policy (gilgamesh R6-N2).
+  // disagreeing views of one policy.
   const first = allowed.toJSON()
   assert.notEqual(first, allowed.toJSON(), 'toJSON must not hand out its own array')
   first.push('evil-chain')
@@ -246,7 +245,7 @@ test('describe() and toJSON() are the named escapes, and they behave as document
   assert.equal(allowed.describe(), `eip155:8453, ${SOLANA_MAINNET_LOCAL}`)
 
   // describe() is prose. Searching it is substring matching, which errs OPEN
-  // -- the reason it is a method rather than a field (gilgamesh R6-N1).
+  // -- the reason it is a method rather than a field.
   for (const prefix of ['eip155:8', 'eip155:845', 'solana', 'olana-mainne']) {
     assert.ok(
       allowed.describe().includes(prefix),
@@ -261,7 +260,7 @@ test('describe() and toJSON() are the named escapes, and they behave as document
 })
 
 test('two spellings of one chain de-duplicate to one request', () => {
-  // 🔴 gilgamesh: `holdings` took its network list straight from the caller,
+  // 🔴 Measured: `holdings` took its network list straight from the caller,
   // so asking for `solana-mainnet` AND the CAIP-2 form returned two entries
   // for the same balance. Nothing was wrong with either entry; the damage is
   // that a model adding up what it is handed reports double the holdings.

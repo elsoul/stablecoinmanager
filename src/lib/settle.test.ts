@@ -5,7 +5,7 @@ import { ACCEPTED_STATUSES, settleOutcome } from './settle.ts'
 // ---------------------------------------------------------------------------
 // Executed over the input space, not pinned as text.
 //
-// The same fail-open was re-introduced three times in PR-2 (B-2, C-1, O-3),
+// The same fail-open was re-introduced three times (B-2, C-1, O-3),
 // each in a shape the previous pin did not cover, because the decision was
 // inline in a module node cannot load. Here it is arithmetic on three inputs
 // and the whole grid is checked.
@@ -35,7 +35,7 @@ test('acceptance is exactly the three rail statuses', () => {
   // 🔴 The expectation is written out, NOT derived from ACCEPTED_STATUSES.
   // Deriving it made both sides move together: removing 409 from the constant
   // left this green while the behaviour changed from accepted to refused
-  // (steiner N-7, #14054). A test whose expectation is computed from the
+  //. A test whose expectation is computed from the
   // thing under test cannot disagree with it.
   const ACCEPTED = new Set([200, 202, 409])
   for (const httpStatus of STATUSES) {

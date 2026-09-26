@@ -19,7 +19,7 @@
     "sourceMap": true,
     "paths": {
       "@/*": ["src/*"],
-      "@constants/*": ["../../../constants/*"]
+      "@constants/*": ["./constants/*"]
     }
   },
   "compileOnSave": true,

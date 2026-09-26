@@ -138,10 +138,10 @@ test('SOURCE: every tool return path is wrapped in redact, except the seed expor
   // Exact, not `>= 4`. The unwrapped-count assertion below reddens if the
   // extractor drops the seed-export path, but it stays green if the extractor
   // drops any of the OTHER twelve -- and then this test would be reporting
-  // success over a shrinking population. 17 as of PR-3 = 13 tools +
-  // unknown-tool + invalid-arguments + the exhaustiveness arm + the catch.
-  // It was 13 in PR-2, when there were 9 tools; this guard reported the
-  // change rather than absorbing it, which is what the exact number is for.
+  // success over a shrinking population. 17 = 13 tools + unknown-tool +
+  // invalid-arguments + the exhaustiveness arm + the catch. The number has
+  // moved as tools were added; this guard reported each change rather than
+  // absorbing it, which is what the exact number is for.
   assert.equal(returns.length, 17, 'every return path in the router was found')
 
   const unwrapped = returns.filter((snippet) => !snippet.includes('redact('))

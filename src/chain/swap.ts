@@ -28,8 +28,7 @@
  * against the same SDK. It is DECLARED rather than merely left here because
  * silence is what made it look alive: `chain/swap.test.ts` pins that the
  * importer count is zero, so the commit that finally wires this in reddens
- * and has to come back and delete this banner
- * (steiner, #14054 -- deferred from PR-3 to here).
+ * and has to come back and delete this banner.
  *
  * What unblocks it: a funded wallet, so the broadcast path can be exercised
  * in production before it ships rather than after.

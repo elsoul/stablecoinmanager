@@ -33,7 +33,7 @@ import { networkAllowlist } from './networks.ts'
  * them -- which the test named "the shipped [vars] are identical to the
  * built-in defaults" pins. If that test ever reddens, this fixture stops
  * standing in for the deployed config and the cases using it have to be
- * re-read (cyan N-3, #14067).
+ * re-read.
  */
 const CEILING: Policy = loadPolicy({} as never)
 
@@ -210,7 +210,7 @@ test('a non-finite CEILING fails closed, not just a non-finite amount', () => {
     assert.equal(daily.kind, 'over_daily_ceiling', `maxEurcPerDay=${broken} must refuse`)
   }
 
-  // 🔴 All FOUR ceilings, not just the two about money (steiner N-1). Two of
+  // 🔴 All FOUR ceilings, not just the two about money. Two of
   // four being guarded reads as a decision about the other two.
   for (const broken of [Number.NaN, Number.POSITIVE_INFINITY]) {
     const slippage = reserveDecision({
@@ -246,7 +246,7 @@ test('a non-finite CEILING fails closed, not just a non-finite amount', () => {
 })
 
 test('refuseEverything refuses a payment the shipped ceiling allows', () => {
-  // 🔴 cyan B-1. This was the money path's fail-closed exit and it had NO
+  // 🔴 This was the money path's fail-closed exit and it had NO
   // executable control: replacing its body with a fully permissive policy
   // left 240 pass / 0 fail. The only guard was a source pin asserting the
   // CALL still exists, which sees deletion and not neutering -- the exact
@@ -293,7 +293,7 @@ test('refuseEverything refuses a payment the shipped ceiling allows', () => {
   // them whatever the allowlists said, and one of them used the same network
   // as the control -- it changed nothing. Proof: with a weakened
   // refuseEverything, deleting the eight property assertions above and
-  // keeping the loop left 243 pass / 0 fail (cyan B-5, #14067).
+  // keeping the loop left 243 pass / 0 fail.
   //
   // So each case takes the shipped ceiling, which reserves, and closes
   // exactly ONE field to the value refuseEverything() uses. Any refusal is
@@ -344,7 +344,7 @@ test('refuseEverything refuses a payment the shipped ceiling allows', () => {
 })
 
 test('🔴 the shipped [vars] are identical to the built-in defaults', () => {
-  // 🔴 cyan B-2, pinned so it cannot be forgotten again. `loadPolicy({})`
+  // 🔴 Pinned so it cannot be forgotten again. `loadPolicy({})`
   // does NOT throw -- it returns the built-in defaults, by design, and
   // policy.test.ts pins that by name. So a worker that reads no POLICY_* var
   // at all behaves exactly like one that reads every one of them, because
@@ -372,7 +372,7 @@ test('🔴 the shipped [vars] are identical to the built-in defaults', () => {
       'POLICY_MAX_EURC_PER_PAYMENT',
       'POLICY_MAX_SLIPPAGE_BPS',
     ],
-    'exactly the shipped policy vars -- a new one is meant to be read here (cyan N-2)',
+    'exactly the shipped policy vars -- a new one is meant to be read here',
   )
 
   const defaults = loadPolicy({} as never)
@@ -403,7 +403,7 @@ test('loadPolicy defaults on ABSENT and throws on PRESENT-BUT-UNUSABLE', () => {
 })
 
 test('a daily refusal carries every violation, not only the daily one', () => {
-  // steiner N-6. The daily outcome kept its own shape because the caller's
+  // The daily outcome kept its own shape because the caller's
   // guidance for it is specific, and in doing so it dropped the rest. A
   // payment over the daily ceiling AND on a disallowed network reported only
   // the first, so fixing what the message named left the payment refused for
@@ -458,7 +458,7 @@ test('a daily refusal carries every violation, not only the daily one', () => {
 })
 
 test('a refusal names every cause it was handed, daily first', () => {
-  // cyan N-1. The prose is built here, where node can drive it, because the
+  // The prose is built here, where node can drive it, because the
   // pin at the call site was a grep and a grep cannot tell "computed the
   // list" from "computed the list and used it".
   const violations: PolicyViolation[] = [

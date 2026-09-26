@@ -24,7 +24,7 @@ export interface BridgeArgs {
  * Quote and prepare a swap — and refuse everything this worker cannot honestly
  * do today.
  *
- * 🔴 This tool does NOT broadcast. PR-3's job is to establish that the
+ * 🔴 This tool does NOT broadcast. Its job is to establish that the
  * SDK-side plumbing resolves: route, policy, quote, and the approval that has
  * to happen first. Broadcasting is a second signature on a second
  * transaction, and the plan's acceptance for it is a production run that has
@@ -38,7 +38,7 @@ export interface BridgeArgs {
  * `bridge` accepted a slippageBps and neither validated nor used it while
  * `swap` refused anything over the ceiling. The asymmetry was harmless while
  * neither signs, but an asymmetry reads as "the other one must have had a
- * reason" to whoever adds signing (steiner, #14054).
+ * reason" to whoever adds signing.
  */
 function checkSlippage(
   requested: number | undefined,
@@ -48,7 +48,7 @@ function checkSlippage(
   // `value > NaN` is false, so an unreadable limit would accept anything.
   // `requested ?? limit` would also hand a NaN limit straight back as the
   // value, which then fails the finiteness test -- refusal either way, but
-  // through the guard rather than by accident (steiner N-1, #14067).
+  // through the guard rather than by accident.
   const ceiling = Number.isFinite(limit) ? limit : 0
   const value = requested ?? ceiling
   if (!Number.isFinite(value) || value < 0 || value > ceiling) {
@@ -111,12 +111,12 @@ export async function bridge(env: Env, args: BridgeArgs): Promise<ToolResult> {
 
   // Both ends, and the same check `swap` makes. The asymmetry was harmless
   // while neither tool signs, but an asymmetry reads as "the other one must
-  // have had a reason" to whoever adds signing (gilgamesh N2, #14054).
+  // have had a reason" to whoever adds signing.
   //
   // 🔴 Through the allowlist's own `allows`, not a string match. The SDK names chains in
   // CAIP-2 and this worker's config names Solana `solana-mainnet`; a raw
   // comparison refused BOTH capabilities the SDK ships, and told the caller
-  // to edit a var that could not have fixed it (steiner B-5, #14054).
+  // to edit a var that could not have fixed it.
   for (const [label, chainId] of [['fromChainId', args.fromChainId], ['toChainId', args.toChainId]]) {
     if (!policy.allowedNetworks.allows(chainId)) {
       return fail({ [label]: chainId, allowed: policy.allowedNetworks.toJSON() }, [

@@ -19,7 +19,7 @@
  *
  * This also settles the direction that was reported inert: a narrowing
  * override that does not apply is a limit believed to be smaller than it is
- * (gilgamesh N2 / steiner N-3, #14018). Narrowing is exactly what applies.
+ *. Narrowing is exactly what applies.
  */
 import type { EffectivePolicyValue, Policy } from './policy'
 

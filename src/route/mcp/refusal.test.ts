@@ -18,7 +18,7 @@ import type { PolicyViolation } from '@/lib/policy'
  * importer (251 pass / 1 fail, measured). The obvious repairs were to delete
  * the comment or to add a non-caller to the expected list, and the second one
  * disables the guard permanently: once a non-caller is expected, a real
- * import redirection hides behind it (cyan B-4, #14077).
+ * import redirection hides behind it.
  *
  * Limits, since this file is about naming them: a bare `//` or `/*` inside a
  * string or template literal still hides the line after it. Measured in
@@ -37,11 +37,11 @@ const VIOLATIONS: PolicyViolation[] = [
 const REQUIREMENT = { scheme: 'exact', network: 'eip155:1', asset: 'DAI' }
 
 test('a daily refusal carries the whole result, not a prefix of it', () => {
-  // 🔴 cyan, #14077. Three fixes in a row moved the decision one step out and
-  // left the last step at the call site: the branch could compute and discard
-  // (PR-4 B-2), then compute the prose and not spread it (#14074 N-1), then
+  // 🔴 Three fixes in a row moved the decision one step out and
+  // left the last step at the call site: the branch could compute and discard,
+  // then compute the prose and not spread it, then
   // call the builder and slice its answer --
-  // `refusalReasons(reservation).slice(0, 1)` left 248 pass / 0 fail, because
+  // `refusalReasons(reservation).slice(0, 1)` left the suite green, because
   // the backstop's two assertions were both still satisfied.
   //
   // The whole ToolResult is built in one place now, so this test sees what a
@@ -145,7 +145,7 @@ test('REACH: the module these tests verify is the one production uses', () => {
   //
   // Measured: pointing x402Pay's import at a same-shaped sibling that
   // truncates the reasons leaves 251 pass / 0 fail, and a local shim with
-  // this name does the same (cyan, #14077). That is worse than a missed
+  // this name does the same. That is worse than a missed
   // mutation -- this file would keep verifying a module nobody calls, green
   // forever, which is the orphaned-test shape `chain/swap.ts` carries a pin
   // for as well.
@@ -168,7 +168,7 @@ test('REACH: the module these tests verify is the one production uses', () => {
       // Any spelling that resolves to this module: a relative path ending in
       // `/refusal`, or the alias. Measured: an earlier version listed three
       // exact strings and a genuine caller one directory deeper
-      // (`'../../refusal'`) passed unseen (cyan N-e, #14077).
+      // (`'../../refusal'`) passed unseen.
       if (/from\s+'(?:[./]*\/)?refusal'|from\s+'@\/route\/mcp\/refusal'/.test(code(readFileSync(full, 'utf8')))) {
         importers.push(full.slice(root.length + 1).split(sep).join('/'))
       }

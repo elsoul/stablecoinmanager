@@ -34,7 +34,7 @@ const TOKENS: TokenRow[] = [
 const pool = (over: Partial<PoolRow>): PoolRow => ({
   // Curated form on purpose. A fixture id outside `pool-<n>` is dropped by
   // the pool allowlist, which would make every positive case below vacuous --
-  // the same trap the token fixtures hit when curation landed (#14054 B-2).
+  // the same trap the token fixtures hit when curation landed.
   poolDefinitionId: 'pool-0001',
   chainId: 'eip155:1',
   token0DeploymentId: 'deployment-0008',
@@ -156,7 +156,7 @@ test('the quotable-adapter list is a list, not a wildcard', () => {
 })
 
 test('🔴 a discovered POOL is not routable, even between two curated tokens', () => {
-  // steiner N-10. Curating both tokens said nothing about the pool joining
+  // Curating both tokens said nothing about the pool joining
   // them. Measured on the shipped catalogue before this rule: 12 routes
   // survived token curation and 8 of them ran through a `discovered-pool-*`.
   // Two reviewed tokens joined by an unreviewed pool is a different claim

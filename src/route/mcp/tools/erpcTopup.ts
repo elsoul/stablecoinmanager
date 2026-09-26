@@ -64,14 +64,13 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   //
   // 🔴 This is the SECOND policy read of a top-up: x402Pay reads again, and
   // the ledger composes a third time inside the reservation. The duplication
-  // was raised as waste (steiner N-13, #14054) and is kept deliberately --
-  // re-reading is what makes the ledger's copy fresh, which is the stale-policy
-  // shape PR-4 removed.
+  // was raised as waste and is kept deliberately --
+  // re-reading is what makes the ledger's copy fresh, which fixes the
+  // stale-policy shape an earlier version had.
   //
   // 🔴 Precisely: the preferences derived here ARE handed down, as
   // `assetPreferences` to x402Pay, so "nothing downstream trusts it" -- an
-  // earlier wording of this comment -- was looser than the code (cyan N-2,
-  // #14074). What is not trusted downstream is this read as a CEILING:
+  // earlier wording of this comment -- was looser than the code. What is not trusted downstream is this read as a CEILING:
   // x402Pay reads the policy again for its own check, and the ledger composes
   // it a third time inside the reservation turn. The preferences only order
   // which payable requirement is chosen, and every ceiling that decision has
@@ -118,7 +117,7 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   // runs because its condition is `status !== 'granted'` -- so on the fastest
   // and most ordinary outcome this tool returned no invoice number at all,
   // while promising one. x402_pay already records it in the ledger; this is
-  // the other half, the tool's own answer (steiner N-10, #14018).
+  // the other half, the tool's own answer.
   let invoiceNumber: string | undefined = data.invoiceNumber
   let attempts = 0
   while (attempts < POLL_ATTEMPTS && status !== 'granted' && status !== 'stuck') {

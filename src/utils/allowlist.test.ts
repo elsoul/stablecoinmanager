@@ -6,7 +6,7 @@ import {
   parseAllowedEmails,
 } from './allowlist.ts'
 
-const OWNER = 'f.kawasaki@elsoul.nl'
+const OWNER = 'owner@example.com'
 const good = {
   sub: '1234567890',
   provider: 'google',
@@ -78,7 +78,7 @@ test('a non-google provider is refused even with the right address', () => {
 
 test('matching is case- and whitespace-insensitive on both sides', () => {
   assert.equal(
-    evaluateLogin({ ...good, email: '  F.Kawasaki@ELSOUL.nl ' }, ` ${OWNER} `)
+    evaluateLogin({ ...good, email: '  Owner@EXAMPLE.com ' }, ` ${OWNER} `)
       .ok,
     true,
   )

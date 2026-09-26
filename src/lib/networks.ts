@@ -13,8 +13,7 @@
  * just answered "not an allowed network" to every bridge capability the SDK
  * ships. Both of them. The refusal even told the caller to edit
  * POLICY_ALLOWED_NETWORKS, which could not have helped: writing the CAIP-2
- * form there would have un-named Solana for holdings instead
- * (steiner B-5, #14054).
+ * form there would have un-named Solana for holdings instead.
  *
  * So the comparison is normalised rather than the config. Aliases are
  * declared here once.
@@ -25,7 +24,7 @@
  * declaring CAIP-2 canonical while `checkPayment` still compared raw
  * strings, an operator following the remediation text into writing CAIP-2
  * config would have had plan and swap answer "allowed" while every Solana
- * 402 was refused at the payment gate (steiner B-7, #14054). Fail-closed, so
+ * 402 was refused at the payment gate. Fail-closed, so
  * nothing was at risk except the operator's afternoon.
  *
  * The sites that decide network IDENTITY all route through here now:
@@ -40,7 +39,7 @@
  * that a raw string "cannot be compared against policy.allowedNetworks at
  * all". That type no longer exists, and the sentence was false while it did
  * -- it is the exact claim round 5 falsified with `some(n => n === id)`
- * (gilgamesh R6-N3, #14054). Leaving it here would have been worse than
+ *. Leaving it here would have been worse than
  * never writing it: the honest account sits directly below, and a reader
  * reaches this one first.
  */
@@ -88,7 +87,7 @@ export interface NetworkAllowlist {
    * like the array `.includes` this file spent four rounds removing, and is
    * WRONG IN THE OPEN DIRECTION: substring matching answers true for
    * "eip155:8" and "solana" against "eip155:8453, solana-mainnet"
-   * (gilgamesh R6-N1, #14054). Two explicit steps is the most a boundary can
+   *. Two explicit steps is the most a boundary can
    * ask for; one field access was not enough.
    */
   describe(): string
@@ -109,7 +108,7 @@ export function networkAllowlist(ids: readonly string[]): NetworkAllowlist {
     describe: () => listed.join(', '),
     // A copy. Returning `listed` handed callers the live array, so a push
     // gave three disagreeing views: toJSON() showed the extra entry, the
-    // description did not, and allows() refused it (gilgamesh R6-N2, #14054).
+    // description did not, and allows() refused it.
     toJSON: () => [...listed],
   } as NetworkAllowlist
 }
@@ -136,8 +135,7 @@ const ALIASES: Readonly<Record<string, string>> = {
  * from a signature that promises a string, and `swapRefusal('constructor')`
  * then threw on `.startsWith`. Network ids arrive from model-controlled
  * arguments (`plan` takes a free-string chainId and refuses without a prior
- * allowlist check), so "nobody would pass that" is not available here
- * (gilgamesh R4-N1, #14054).
+ * allowlist check), so "nobody would pass that" is not available here.
  *
  * The declared return type made it invisible: every caller trusted `string`,
  * and TypeScript had no reason to doubt it.
@@ -156,4 +154,4 @@ export function canonicalNetwork(id: string): string {
 // removed once `NetworkAllowlist` landed: it had no production caller left,
 // and an exported function whose entire job is to answer the question against
 // an ARRAY is a standing invitation to go back to arrays
-// (gilgamesh R6-N4, #14054). Ask a NetworkAllowlist instead.
+//. Ask a NetworkAllowlist instead.

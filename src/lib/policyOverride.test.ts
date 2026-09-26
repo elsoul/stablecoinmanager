@@ -154,8 +154,8 @@ test('🔴 loadPolicy cannot reach an override even in principle', async () => {
 //
 // Every test above drives applyOverrides/decideSet directly, and all of them
 // stayed green while the two tools that actually move money called
-// loadPolicy(env) and never read an override at all. Measured by gilgamesh:
-// replacing applyOverrides with the identity function reddened three tests,
+// loadPolicy(env) and never read an override at all. Measured: replacing
+// applyOverrides with the identity function reddened three tests,
 // every one of them its own unit test, and not a single payment assertion.
 //
 // A control that only covers the function it is named after has no Reach.
@@ -205,8 +205,8 @@ test('BACKSTOP: no tool reaches for the deploy-time ceiling by name', () => {
   // 🔴 DEMOTED, on purpose. This used to be the only thing standing between
   // `policy_set` and the defect it exists to prevent, and both gates showed
   // it loses: `(await effectivePolicy(env)).ceiling` walked around it with
-  // 211 green (steiner B-6) and so did `import { loadPolicy as readPolicy }`
-  // (gilgamesh R2-N1). The barrier is now `checkPayment`'s parameter type --
+  // 211 green and so did `import { loadPolicy as readPolicy }`
+  //. The barrier is now `checkPayment`'s parameter type --
   // see EffectivePolicyValue in policy.ts -- and a ceiling reaching the money
   // path is a COMPILE error however it is spelled.
   //
@@ -252,8 +252,8 @@ test('BARRIER: the effective-policy brand has exactly one mint in production', (
 })
 
 test('BARRIER: the network allowlist has exactly one mint in production', () => {
-  // 🔴 Symmetry with the EffectivePolicyValue barrier above, which steiner
-  // asked for in round 4 and which this type went without until round 7.
+  // 🔴 Symmetry with the EffectivePolicyValue barrier above, which was
+  // requested in review and which this type went without for a while.
   // A forged allowlist -- `{ allows: () => true } as unknown as
   // NetworkAllowlist` -- compiles, so `networkAllowlist()` being the only
   // producer is a property that has to be checked rather than assumed.
@@ -321,7 +321,7 @@ test('BACKSTOP: nothing in src compares a network with a raw string match', () =
   // The vocabulary defect: the SDK names Solana in CAIP-2 and this worker's
   // config names it `solana-mainnet`, so `allowedNetworks.includes(id)`
   // refused every bridge capability the SDK ships while looking like an
-  // ordinary policy refusal (steiner B-5, #14054). `NetworkAllowlist.allows`
+  // ordinary policy refusal. `NetworkAllowlist.allows`
   // normalises both sides; nothing else may do the comparison.
   // 🔴 Widened from `route/mcp/tools` to the whole tree. Scoping it to the
   // tools directory is why B-7 survived the B-5 fix: the raw comparison that

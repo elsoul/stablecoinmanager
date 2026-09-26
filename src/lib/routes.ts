@@ -98,7 +98,7 @@ export interface PoolRow {
  *      of this guard tested `symbol.startsWith('discovered-')`, which matched
  *      0 of 70 tokens and therefore could not fail, while 20 of 32 routes
  *      touched a discovered token. The docblock below claimed curation the
- *      code never performed (steiner B-2, #14054).
+ *      code never performed.
  *   2. Allowlist rather than denylist: `deployment-<n>` is the curated form,
  *      so a future catalogue that names discovered entries differently is
  *      excluded by default instead of admitted by default.
@@ -116,7 +116,7 @@ function isCurated(token: TokenRow | undefined): boolean {
  * Measured on the shipped catalogue: 12 routes survived token curation and
  * **8 of them ran through a `discovered-pool-*`** -- two reviewed tokens
  * joined by a pool nobody reviewed, which is a different claim from "this
- * pair is fine" (steiner N-10, #14054).
+ * pair is fine".
  *
  * The id shapes are `pool-<n>` and `discovered-pool-<n>`, and the allowlist
  * is positive for the reason the token one is: a catalogue that renames its

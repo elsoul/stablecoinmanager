@@ -8,16 +8,15 @@
  * re-introductions of one fail-open were found that way, each needing its own
  * textual pin:
  *
- *   - requiring a hash for acceptance          (B-2, steiner)
- *   - appending `&& Boolean(txHash)`           (C-1, cyan)
- *   - narrowing `if (!accepted)` instead       (O-3, cyan -- still open when
- *                                               PR-2 merged, closed here)
+ *   - requiring a hash for acceptance
+ *   - appending `&& Boolean(txHash)`
+ *   - narrowing `if (!accepted)` instead
  *
  * Pinning text is a losing game: every pin covers the shapes someone thought
  * of. The decision is arithmetic on three inputs, so it belongs somewhere it
  * can be executed against all of them.
  *
- * The rule, unchanged from PR-2: after a signed payment has been transmitted,
+ * The rule: after a signed payment has been transmitted,
  * the ledger may claim nothing happened ONLY with evidence, and the only
  * evidence is the resource asking for payment again.
  */

@@ -47,7 +47,7 @@ export interface NormalizedRequirement {
  * Normalize the `accepts` array of a 402 body.
  *
  * Everything a caller decides on comes from here, so it never has to read the
- * raw body — and `extraKeys` is surfaced because #13782 was a volatile field
+ * raw body — and `extraKeys` is surfaced because a volatile field was seen
  * inside `extra` turning a correct signature into `price_mismatch`. Comparing
  * the KEY SET across two probes catches that before any money moves; comparing
  * the whole `extra` would flag every legitimate quote refresh.
@@ -117,7 +117,7 @@ export function selectRequirement(
   // 🔴 The canonicalisation here is a NO-OP today, and stays anyway.
   // `normalizeAccepts` marks anything outside `eip155:*` unpayable before
   // this runs, and eip155 ids have one spelling, so no alias can reach the
-  // comparison (steiner N-18, #14054). It is here because the alternative --
+  // comparison. It is here because the alternative --
   // one comparison in this file spelled differently from the six others --
   // is how the vocabulary split got in the first place. Recorded rather than
   // removed, so the next reader knows it was measured and not cargo.
@@ -151,7 +151,7 @@ export function atomicToDecimal(atomic: string, decimals: number): string {
  *
  * Returns the keys that appeared in one probe and not the other. A non-empty
  * result means the requirement carries something that changes between reads,
- * which is the #13782 failure: sign against probe A, submit, and the server
+ * which is the failure mode: sign against probe A, submit, and the server
  * compares against probe B.
  */
 export function extraKeyDrift(a: readonly string[], b: readonly string[]): string[] {

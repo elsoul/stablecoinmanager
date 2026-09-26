@@ -4,37 +4,37 @@
   "version": "0.1.0",
   "main": "dist/index.js",
   "type": "module",
+  "packageManager": "pnpm@10.29.3",
   "engines": {
-    "pnpm": ">=10",
-    "npm": "please_use_pnpm_instead"
+    "node": ">=24.14.1",
+    "pnpm": ">=10"
   },
   "scripts": {
     "dev": "wrangler dev --local --config wrangler.dev.toml",
     "assert:prod-config": "node scripts/assertProductionConfig.ts",
     "deploy:prod": "node scripts/assertProductionConfig.ts && wrangler deploy",
     "check": "tsc --noEmit && tsc -p tsconfig.test.json",
-    "test": "tsx --test src/wallet/derive.test.ts src/chain/signBinding.test.ts src/chain/gateway.test.ts src/chain/catalog.test.ts src/chain/swap.test.ts src/chain/bridge.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/productionConfig.provider.test.ts src/lib/productionConfig.node.test.ts src/lib/reserve.test.ts src/lib/settle.test.ts src/lib/x402.test.ts src/lib/networks.test.ts src/lib/routes.test.ts src/lib/policyOverride.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/utils/appOidc.test.ts src/utils/appOidcJwks.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/oauth/authApiLogin.characterization.test.ts src/route/oauth/authApiLoginOutcome.test.ts src/route/oauth/appOidcLogin.test.ts src/route/mcp/refusal.test.ts src/route/mcp/toolsList.test.ts src/route/mcp/tools/policySet.test.ts",
+    "test": "tsx --test src/wallet/derive.test.ts src/chain/signBinding.test.ts src/chain/gateway.test.ts src/chain/catalog.test.ts src/chain/swap.test.ts src/chain/bridge.test.ts src/do/walletLedger.test.ts src/lib/productionConfig.test.ts src/lib/reserve.test.ts src/lib/settle.test.ts src/lib/x402.test.ts src/lib/networks.test.ts src/lib/routes.test.ts src/lib/policyOverride.test.ts src/lib/runtimeSecrets.test.ts src/lib/policy.test.ts src/utils/allowlist.test.ts src/utils/redact.test.ts src/route/oauth/oauthSecurity.test.ts src/route/oauth/token.test.ts src/route/mcp/refusal.test.ts src/route/mcp/toolsList.test.ts src/route/mcp/tools/policySet.test.ts",
     "test:deploy": "pnpm test && pnpm assert:prod-config",
     "wallet:init": "node scripts/wallet-init.mjs"
   },
   "dependencies": {
-    "@elsoul/erpc-sdk": "catalog:",
-    "@noble/curves": "catalog:",
-    "@noble/hashes": "catalog:",
-    "@scure/base": "catalog:",
-    "@scure/bip39": "catalog:",
-    "@x402/core": "catalog:",
-    "@x402/evm": "catalog:",
-    "hono": "catalog:",
-    "jose": "catalog:",
-    "viem": "catalog:",
-    "zod": "catalog:"
+    "@elsoul/erpc-sdk": "0.8.1",
+    "@noble/curves": "1.9.7",
+    "@noble/hashes": "1.8.0",
+    "@scure/base": "1.2.6",
+    "@scure/bip39": "1.6.0",
+    "@x402/core": "2.13.0",
+    "@x402/evm": "2.13.0",
+    "hono": "4.12.27",
+    "viem": "2.48.11",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "catalog:",
-    "@types/node": "catalog:",
-    "tsx": "catalog:",
-    "typescript": "catalog:",
-    "wrangler": "catalog:"
+    "@cloudflare/workers-types": "4.20260625.1",
+    "@types/node": "25.5.0",
+    "tsx": "4.21.0",
+    "typescript": "5.9.3",
+    "wrangler": "4.104.0"
   }
 }

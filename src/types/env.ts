@@ -16,21 +16,11 @@ export type Env = {
   OAUTH_ISSUER: string
   OAUTH_STATE_SECRET: string
 
-  /** Selects the login path. Unset or '' -> 'erpc-auth-api'. See utils/authProvider.ts. */
-  AUTH_PROVIDER?: string
-
   // auth-api, used purely as the Google IdP (establishes WHICH human is here).
-  // Required only when AUTH_PROVIDER is 'erpc-auth-api' (or unset); the
-  // deploy-time assert in lib/productionConfig.ts enforces that. Under
-  // AUTH_PROVIDER='app-oidc' these are not read.
   AUTH_API_BASE_URL: string
   AUTH_API_CLIENT_ID: string
   /** Comma-separated. A login outside this list is refused with 403. */
   ALLOWED_GOOGLE_EMAILS: string
-
-  // app-oidc-api broker, used as the login path when AUTH_PROVIDER='app-oidc'.
-  APP_OIDC_ISSUER?: string
-  APP_OIDC_CLIENT_ID?: string
 
   /**
    * The x402 resource server for ERPC credit. A var rather than a constant so

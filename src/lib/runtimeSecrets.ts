@@ -2,11 +2,10 @@
  * Fail loudly when a runtime secret is missing.
  *
  * All five of this worker's secrets are operator-set with
- * `wrangler secret put` rather than synced from CI (see slv.toml for why --
- * the repository is at GitHub's 100-secret cap). The cost of that is that a
- * fresh environment starts with none of them, and the failure mode we must not
- * have is a worker that boots, accepts a login, and signs tokens with
- * `undefined`.
+ * `wrangler secret put` rather than synced from any CI system. The cost of
+ * that is that a fresh environment starts with none of them, and the failure
+ * mode we must not have is a worker that boots, accepts a login, and signs
+ * tokens with `undefined`.
  *
  * So: OAuth refuses with 503 while a secret is missing, and /health names
  * which ones, because "it deployed" and "it works" are different claims.

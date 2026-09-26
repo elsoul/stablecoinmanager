@@ -75,7 +75,7 @@ test('an empty login allowlist is refused', () => {
     () =>
       assertDeployableProductionConfig(
         provisioned().replace(
-          'ALLOWED_GOOGLE_EMAILS = "f.kawasaki@elsoul.nl"',
+          'ALLOWED_GOOGLE_EMAILS = "owner@example.com"',
           'ALLOWED_GOOGLE_EMAILS = ""',
         ),
       ),

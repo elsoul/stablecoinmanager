@@ -1,7 +1,7 @@
 /**
  * The ONLY path from this worker to a chain.
  *
- * Kawasaki's ruling for this thread: chain reach comes from `@elsoul/erpc-sdk`
+ * Design ruling for this project: chain reach comes from `@elsoul/erpc-sdk`
  * and nowhere else. No private RPC client, no direct provider URL, no quiet
  * fallback. When the published SDK cannot do something yet, the tool that
  * needs it says so in its result -- `unsupported_yet` with the wishlist id it
@@ -31,7 +31,7 @@
  * one bundle, so a difference in predicate was reported as a difference in
  * the thing measured. The mechanism offered for it cannot hold either --
  * `src/transport/fetch.ts` is one line and contains no namespace identifier
- * (steiner, #14096). State the predicate with the number; that is what makes
+ *. State the predicate with the number; that is what makes
  * the next re-measurement comparable.
  *
  * Re-measure against the tarball (never the GitHub source tree, which carries

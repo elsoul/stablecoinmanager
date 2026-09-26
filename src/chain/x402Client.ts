@@ -105,7 +105,7 @@ const sameRequirement = (a: SignTarget, b: Record<string, unknown>): boolean =>
  * challenge and passes -- but it passes because BARRIER 1 works, so deleting
  * barrier 2 entirely would leave that suite green. A defence whose only
  * evidence is another defence working is not independently verified
- * (gilgamesh N6, #14018), and barrier 2 exists precisely because barrier 1
+ *, and barrier 2 exists precisely because barrier 1
  * depends on SDK behaviour this worker does not own.
  *
  * Checks all five fields, not the two the EIP-3009 authorization carries:
@@ -148,9 +148,8 @@ export function assertSignedMatchesTarget(payload: unknown, target: SignTarget):
  * picked. With the default selector, none of those checks constrain the thing
  * that actually gets signed: a resource can list a large payment to an
  * attacker first and the reviewed one second, pass every policy check on the
- * second, and be signed for the first. Reproduced by gilgamesh (#14018 B1):
- * policy violations 0, ledger row EURC, signature 49 USDC to an unrelated
- * address.
+ * second, and be signed for the first. Reproduced: policy violations 0,
+ * ledger row EURC, signature 49 USDC to an unrelated address.
  *
  * The reference client never had this hole because it refused any challenge
  * with more than one requirement (`if (accepts.length !== 1) die(...)`). This
@@ -202,7 +201,7 @@ export async function signPayment(
   // above all `asset`: "10000 EURC to X" and "10000 USDC to X" have identical
   // payee and amount, so barrier 2 could not tell them apart and the token
   // contract was guarded by barrier 1 alone -- the barrier this very docstring
-  // says we do not own (steiner #14018 B-5, gilgamesh N6).
+  // says we do not own.
   //
   // `payload.accepted` is the requirement the SDK recorded as the one it paid,
   // and it carries all five. Measured on @x402/core 2.13.0: the payload's

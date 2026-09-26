@@ -1,0 +1,5 @@
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+  - bufferutil
+  - utf-8-validate

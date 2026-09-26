@@ -11,8 +11,7 @@
  * overrides that x402_pay and erpc_topup did not read, so an operator
  * tightening a ceiling during an incident received a success response naming
  * the new value while payments continued at the old one -- the one emergency
- * action the feature exists for, reporting success and doing nothing
- * (gilgamesh B1 / steiner B-1, #14054).
+ * action the feature exists for, reporting success and doing nothing.
  */
 import { LEDGER_INSTANCE_NAME, type WalletLedger } from '@/do/walletLedger'
 import { composePolicy, type EffectivePolicy } from '@/lib/effectivePolicy'

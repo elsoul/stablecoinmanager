@@ -57,7 +57,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   const addresses = deriveAddresses(env.WALLET_MNEMONIC ?? '')
   // 🔴 EFFECTIVE, not the deploy-time ceiling. A stored override that
   // tightens a limit has to bind here or `policy_set` is decorative in the
-  // only place it matters (gilgamesh B1, #14054).
+  // only place it matters.
   const { effective: policy } = await effectivePolicy(env)
   const ledger = env.WALLET_LEDGER.get(
     env.WALLET_LEDGER.idFromName(LEDGER_INSTANCE_NAME),
@@ -69,7 +69,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // Returning ok for a row that says `failed` tells the caller "already paid"
   // about a payment that did not happen, and the key is spent either way, so
   // the caller cannot retry it. Reporting a failure as a success is worse
-  // than the failure (steiner, #14018 B-3).
+  // than the failure.
   const prior = await ledger.receipt(args.idempotencyKey)
   if (prior) {
     const priorStatus = String((prior as { status?: unknown }).status ?? 'unknown')
@@ -151,8 +151,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
     resource: args.url,
     // No policy is passed: the ledger composes it in the same synchronous
     // turn as the reservation, so an override that lands while this request
-    // is probing the resource binds to THIS payment (steiner N-11 #14054,
-    // B-1 #14067).
+    // is probing the resource binds to THIS payment.
     intent,
   })
 
@@ -164,7 +163,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   if (reservation.kind === 'over_daily_ceiling') {
     // The whole refusal comes from one place, tested end to end. Assembling
     // it here again is what let a branch truncate the reasons it asked for
-    // (cyan, #14077). See route/mcp/refusal.ts.
+    //. See route/mcp/refusal.ts.
     return refusalFor(reservation, chosen)
   }
   if (reservation.kind === 'policy_violation') {
@@ -183,8 +182,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // green, falling through to `signPayment` -- signing a payment the ledger
   // refused and did not record, which this file's own docblock names as the
   // one state that loses money. This PR added that variant; the branch that
-  // handles it was one forgotten `if` away from never existing
-  // (steiner B-2, #14067).
+  // handles it was one forgotten `if` away from never existing.
   //
   // Both directions are closed: a new variant is a compile error here, and
   // if one reaches this line at runtime anyway, nothing is signed.
@@ -201,7 +199,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   try {
     // The account is handed to a callback and never returned, so no value
     // here holds viem's HDAccount -- whose `getHdKey` is an own enumerable
-    // key and a public accessor for the private key (gilgamesh P1, #14067).
+    // key and a public accessor for the private key.
     signed = await deriveEvmSigner(env.WALLET_MNEMONIC ?? '').withAccount((account) =>
       signPayment(
         account,
@@ -281,7 +279,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // resource, a 200 carrying content and no settle header — fell into the
   // refusal branch and was recorded `failed`, uncounted. A successful payment
   // that tells the ceiling it never happened is the same fail-open as
-  // excluding `stuck`, reached from the other side (steiner, #14018 B-2).
+  // excluding `stuck`, reached from the other side.
   // ---------------------------------------------------------------------
   // 🔴 ONE decision, computed once, in a module that can be executed under
   // `node --test`. Three separate re-introductions of the same fail-open were
@@ -331,7 +329,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // `status !== 'granted'`), so the poller had no second chance to record it.
   // With `settled` now terminal, there was no third chance either, and the
   // tool's promise to report an invoice number quietly did not hold for the
-  // fastest, most ordinary outcome (steiner N-7, #14018).
+  // fastest, most ordinary outcome.
   await ledger.settlePayment({
     idempotencyKey: args.idempotencyKey,
     status: settledStatus,
@@ -349,7 +347,7 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
       // demoting the stuck row to pending and losing the fact that the
       // outcome was unknown. No money moves either way (the daily total
       // counts both), but the record an operator reads was wrong, and a
-      // wrong record is what someone acts on (cyan O-1, #14018).
+      // wrong record is what someone acts on.
       status: settledStatus,
       amount: {
         atomic: chosen.amountAtomic,
