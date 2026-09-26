@@ -19,9 +19,9 @@ request that goes over one is refused.
 
 - **x402 payments with no gas token needed.** The worker signs an EIP-3009
   `transferWithAuthorization` and the x402 facilitator submits it, so the
-  wallet needs no ETH. The same flow has been observed on Base Sepolia with a
-  reference x402 client; this worker has not yet exercised it on mainnet (see
-  "Nothing in this worker has moved real money yet").
+  wallet needs no ETH. A production deployment of this worker has paid one
+  1.21 EURC invoice on Base mainnet this way (see "What has and has not been
+  exercised").
 - **Limits the agent cannot raise.** Per-payment and daily limits come from
   the deploy config. At runtime the agent can only *lower* them. Raising a
   limit means a redeploy.
