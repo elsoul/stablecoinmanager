@@ -220,15 +220,21 @@ The worker signs only x402 requirements on EVM networks (`eip155:*`) using the
 
 ## What has and has not been exercised
 
-**Nothing in this worker has moved real money yet.** The payment path is
-verified by tests that run the x402 SDK, not by a live settlement, and no
-small real top-up has been run in production. The worker itself cannot read
-Base balances yet (see "Chain access" below), so a funded wallet's balance can
-only be confirmed from outside the worker. Before trusting your own deploy
-with real funds, make one small payment with it (a minimal `erpc_topup`, for
-example) and check the result on-chain. Until that has happened, every claim
-here about paying is a claim about code, not about an outcome. `swap` and
-`bridge` stop before signing for the same reason.
+**One real payment has been made from a production deployment of this worker.**
+On 2026-09-26 (Base block 51812836, 09:30:19 UTC) an `erpc_topup` paid 1.21 EURC
+for one ERPC credit. The EURC transfer from the worker's wallet
+`0x7A5837f5bB52C53e08fcFf214c2Cd11daa8EF9EE` is on-chain in transaction
+`0xcd5cad5704394ed65850e5e41e18abab373e77de724dde386d432454acdc2964`, and the
+invoice was granted after the worker's settlement checks. In the same session a
+`policy_set` that lowered the per-payment ceiling to 2 EURC made the worker
+refuse a 2.42 EURC top-up before signing.
+
+That is one payment on one rail (x402 EURC on Base). The worker itself cannot
+read Base balances yet (see "Chain access" below), so a funded wallet's balance
+is confirmed from outside the worker. `swap` and `bridge` still stop before
+signing: no live swap or bridge has been executed. Before trusting your own
+deploy with real funds, make one small payment with it and check the result
+on-chain.
 
 ---
 
@@ -625,4 +631,4 @@ keeps an authorization code from being delivered to a host you do not own.
 - AI の使いすぎは prompt ではなくコードの上限で止める: 1 回・1 日・slippage・deadline の上限を超えた要求は拒否し、減額して払うことはしない。
 - `policy_set` は上限を**下げることしかできない**。上げるには再デプロイが要る。network・asset・支払先は実行時に変更できない。
 - 値が読めない・数値でないときは常に拒否側に倒れる（fail-closed）。`idempotencyKey` で二重払いを防ぎ、署名するのは検査を通った要求だけ。
-- 実際の送金はまだ行っていない。支払いに関する記述はコードとテストについてのもので、本番での結果ではない。実資金を入れる前に、自分のデプロイで少額の支払いを 1 回試すこと。
+- 本番デプロイから 1.21 EURC の支払いを 1 回実施済み（Base tx `0xcd5cad57…acdc2964`・2026-09-26）。swap / bridge は署名前で止まる。実資金を入れる前に、自分のデプロイで少額の支払いを 1 回試して on-chain で確かめること。
