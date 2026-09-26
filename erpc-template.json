@@ -1,0 +1,78 @@
+{
+  "$schema": "https://storage.erpc.global/schemas/erpc-template/v1.json",
+  "schemaVersion": 1,
+  "name": "stablecoin-manager",
+  "runtime": "cloudflare-worker",
+  "minCliVersion": "0.2.3",
+  "cloudflare": {
+    "config": "wrangler.toml",
+    "wrangler": ["pnpm", "exec", "wrangler"],
+    "minWranglerVersion": "4.104.0",
+    "kv": [{ "binding": "MCP_KV", "title": "{{app.name}}-mcp-kv" }],
+    "preflight": [["pnpm", "run", "assert:prod-config"]]
+  },
+  "build": { "command": ["pnpm", "install", "--frozen-lockfile"] },
+  "broker": { "issuer": "https://app-oidc-api.s-kishi.workers.dev" },
+  "render": [{ "path": "wrangler.toml", "format": "toml" }],
+  "prompts": [
+    {
+      "key": "domain",
+      "target": "var",
+      "flag": "domain",
+      "question": "Custom domain (a zone on your Cloudflare account)",
+      "validate": { "pattern": "(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}" }
+    },
+    {
+      "key": "ALLOWED_GOOGLE_EMAILS",
+      "target": "var",
+      "flag": "email",
+      "question": "Google account(s) allowed to sign in (comma-separated)",
+      "validate": { "pattern": "[^,\\s@]+@[^,\\s@]+(?:,[^,\\s@]+@[^,\\s@]+)*" }
+    },
+    { "key": "MCP_SERVER_BASE_URL", "target": "derived", "expr": "https://{{domain}}" },
+    { "key": "OAUTH_ISSUER", "target": "derived", "expr": "https://{{domain}}" },
+    { "key": "APP_OIDC_ISSUER", "target": "derived", "expr": "{{broker.issuer}}" },
+    {
+      "key": "APP_OIDC_CLIENT_ID",
+      "target": "broker-register",
+      "redirectUris": ["https://{{domain}}/oauth/callback"],
+      "clientName": "{{app.name}}",
+      "validate": { "pattern": "app_[A-Za-z0-9_-]{22}" }
+    },
+    { "key": "JWT_SECRET", "target": "secret-generate", "bytes": 32, "encoding": "base64url" },
+    { "key": "REFRESH_TOKEN_SECRET", "target": "secret-generate", "bytes": 32, "encoding": "base64url" },
+    { "key": "OAUTH_STATE_SECRET", "target": "secret-generate", "bytes": 32, "encoding": "base64url" },
+    {
+      "key": "WALLET_MNEMONIC",
+      "target": "secret-pipe",
+      "command": ["node", "scripts/wallet-generate.mjs"],
+      "validate": { "pattern": "[a-z]+(?: [a-z]+){23}" },
+      "backup": {
+        "message": "The recovery phrase is never shown by this CLI. After deploying, sign in and run wallet_export_seed, then store the phrase offline. Losing it loses the funds.",
+        "confirm": "I will export and store the recovery phrase offline"
+      }
+    },
+    {
+      "key": "ERPC_API_KEY",
+      "target": "secret-input",
+      "required": false,
+      "env": "ERPC_API_KEY",
+      "question": "ERPC API key (optional; needed for erpc_topup)"
+    }
+  ],
+  "postDeploy": [
+    {
+      "kind": "http",
+      "baseUrlFromVar": "MCP_SERVER_BASE_URL",
+      "path": "/health",
+      "expectStatus": 200,
+      "expectJson": { "status": "ok" }
+    },
+    {
+      "kind": "oauth-authorize-redirect",
+      "baseUrlFromVar": "MCP_SERVER_BASE_URL",
+      "issuerFromVar": "APP_OIDC_ISSUER",
+      "followIssuer": true
+    }
+  ]
+}

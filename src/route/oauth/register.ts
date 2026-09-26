@@ -1,5 +1,4 @@
-// Copied from `api/mcp/master-api/src/route/oauth/register.ts`; the only changes
-// are the default scope and routing logging through the redactor.
+// Dynamic client registration for MCP clients; logging goes through the redactor.
 import { Hono } from 'hono'
 import type { AppContext } from '@/types/env'
 import { createKVStore } from '@/utils/kv'

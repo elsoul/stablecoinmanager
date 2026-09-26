@@ -2,9 +2,9 @@
  * The bridge leg: Mayan Swift v2, as far as the published SDK goes.
  *
  * The capability list is PARSED from the SDK at runtime rather than written
- * down here. The plan's appendix records what shipped on 2026-09-21 — two
- * capabilities, EURC between Ethereum and Solana — and that number is exactly
- * the kind of fact that goes stale in a comment while the code keeps working.
+ * down here. As measured on 2026-09-21, the SDK exposed two capabilities --
+ * EURC between Ethereum and Solana -- and that number is exactly the kind of
+ * fact that goes stale in a comment while the code keeps working.
  * Reading it means a new SDK version changes the answer without an edit, and
  * nothing here can offer a route the SDK does not carry.
  */

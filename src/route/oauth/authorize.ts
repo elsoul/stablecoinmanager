@@ -1,6 +1,8 @@
 import { Hono } from 'hono'
 import type { AppContext } from '@/types/env'
 import { buildAuthApiAuthorizeUrl } from '@/utils/authApi'
+import { buildAppOidcAuthorizeUrl, oidcTxnKey, resolveAppOidcConfig } from '@/utils/appOidc'
+import { resolveAuthProvider } from '@/utils/authProvider'
 import { generateCodeChallenge, generateCodeVerifier } from '@/utils/pkce'
 import { encodeState, generateNonce } from '@/utils/state'
 import { createKVStore } from '@/utils/kv'
@@ -11,6 +13,7 @@ export const authorizeRouter = new Hono<AppContext>()
 
 authorizeRouter.get('/', async (c) => {
   try {
+    const provider = resolveAuthProvider(c.env)
     const responseType = c.req.query('response_type')
     const clientId = c.req.query('client_id')
     const redirectUri = c.req.query('redirect_uri')
@@ -74,6 +77,50 @@ authorizeRouter.get('/', async (c) => {
     // on our own callback.
     const upstreamVerifier = generateCodeVerifier()
     const upstreamChallenge = await generateCodeChallenge(upstreamVerifier)
+
+    // app-oidc: an early return. The upstream PKCE verifier goes into
+    // MCP_KV rather than into state -- see appOidc.ts.
+    if (provider === 'app-oidc') {
+      const appOidcConfig = resolveAppOidcConfig(c.env)
+      const nonce = generateNonce()
+      const appOidcState = await encodeState(
+        {
+          resource: resource.replace(/\/$/, ''),
+          codeChallenge,
+          timestamp: Date.now(),
+          nonce,
+          redirectUri,
+          clientState: clientState || undefined,
+          clientId,
+        },
+        c.env.OAUTH_STATE_SECRET,
+      )
+
+      if (appOidcState.length > 2048) {
+        return c.json(
+          {
+            error: 'invalid_request',
+            error_description: 'Encoded state exceeds the upstream size limit',
+          },
+          400,
+        )
+      }
+
+      await kv.set(await oidcTxnKey(appOidcState), upstreamVerifier, 'EX', 600)
+
+      safeLog(c.env, 'authorization request accepted', { clientId })
+
+      return c.redirect(
+        buildAppOidcAuthorizeUrl({
+          issuer: appOidcConfig.issuer,
+          clientId: appOidcConfig.clientId,
+          redirectUri: `${c.env.MCP_SERVER_BASE_URL}/oauth/callback`,
+          codeChallenge: upstreamChallenge,
+          state: appOidcState,
+          nonce,
+        }),
+      )
+    }
 
     const state = await encodeState(
       {

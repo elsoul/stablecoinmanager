@@ -205,8 +205,8 @@ test('BACKSTOP: no tool reaches for the deploy-time ceiling by name', () => {
   // 🔴 DEMOTED, on purpose. This used to be the only thing standing between
   // `policy_set` and the defect it exists to prevent, and both gates showed
   // it loses: `(await effectivePolicy(env)).ceiling` walked around it with
-  // 211 green and so did `import { loadPolicy as readPolicy }`
-  //. The barrier is now `checkPayment`'s parameter type --
+  // 211 green and so did `import { loadPolicy as readPolicy }`. The barrier
+  // is now `checkPayment`'s parameter type --
   // see EffectivePolicyValue in policy.ts -- and a ceiling reaching the money
   // path is a COMPILE error however it is spelled.
   //
@@ -252,13 +252,13 @@ test('BARRIER: the effective-policy brand has exactly one mint in production', (
 })
 
 test('BARRIER: the network allowlist has exactly one mint in production', () => {
-  // 🔴 Symmetry with the EffectivePolicyValue barrier above, which was
-  // requested in review and which this type went without for a while.
+  // 🔴 Symmetry with the EffectivePolicyValue barrier above, which this type
+  // went without for a while.
   // A forged allowlist -- `{ allows: () => true } as unknown as
   // NetworkAllowlist` -- compiles, so `networkAllowlist()` being the only
   // producer is a property that has to be checked rather than assumed.
   //
-  // The asymmetry is the finding: one barrier existing and its twin not is
+  // The asymmetry is the point: one barrier existing and its twin not is
   // how a reader concludes the second type is guarded when it is not.
   const root = join(import.meta.dirname, '..')
   const forging: string[] = []
@@ -324,8 +324,8 @@ test('BACKSTOP: nothing in src compares a network with a raw string match', () =
   // ordinary policy refusal. `NetworkAllowlist.allows`
   // normalises both sides; nothing else may do the comparison.
   // 🔴 Widened from `route/mcp/tools` to the whole tree. Scoping it to the
-  // tools directory is why B-7 survived the B-5 fix: the raw comparison that
-  // mattered most was in `lib/policy.ts`, inside checkPayment.
+  // tools directory is how one raw comparison survived the first fix: the one
+  // that mattered most was in `lib/policy.ts`, inside checkPayment.
   const root = join(import.meta.dirname, '..')
   const offenders: string[] = []
   const walk = (dir: string) => {

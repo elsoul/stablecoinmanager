@@ -59,7 +59,7 @@ test('the refusal text tells the operator the one thing that actually works', ()
 test('swap and bridge apply the same slippage ceiling', async () => {
   // Executed, not pinned. `bridge` used to accept a slippageBps and neither
   // validate nor use it, so 9999 passed on one tool and was refused on the
-  // other. The asymmetry is the finding, so the test asks both.
+  // other. The asymmetry is the defect, so the test asks both.
   const src = readFileSync(join(import.meta.dirname, 'swapBridge.ts'), 'utf8')
   const calls = src.match(/checkSlippage\(args\.slippageBps, policy\.maxSlippageBps\)/g) ?? []
   assert.equal(calls.length, 2, 'both tools check slippage against the same ceiling')

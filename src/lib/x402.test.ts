@@ -155,7 +155,7 @@ test('drift compares SHAPE, not values', () => {
 })
 
 // ---------------------------------------------------------------------------
-// Top-ups are EURC-denominated by a standing ruling, recorded in
+// Top-ups are EURC-denominated by design, recorded in
 // constants/base.ts on USDC_BASE_MAINNET_CONTRACT: "USDC on Base is NOT
 // accepted for credit top-ups (design decision, 2026-09-10)".
 //
@@ -248,10 +248,10 @@ test('SOURCE: erpc_topup actually hands the EURC-only list to x402_pay', () => {
     join(import.meta.dirname, '..', 'route', 'mcp', 'toolsList.ts'),
     'utf8',
   )
-  // Comments stripped first. A docblock saying why the field is
-  // absent was added at one point, and a predicate that cannot tell prose from a declaration reports
-  // the explanation as the violation -- measured. The same fix the mnemonic
-  // guard needed.
+  // Comments stripped first. A docblock saying why the field is absent was
+  // added at one point, and a predicate that cannot tell prose from a
+  // declaration reports the explanation as the violation -- measured. The
+  // same fix the mnemonic guard needed.
   const schemaCode = schema
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
@@ -266,8 +266,8 @@ test('SOURCE: erpc_topup actually hands the EURC-only list to x402_pay', () => {
 //
 // This is not tidiness. Hand-typing the EURC address is how this package
 // ALMOST shipped a top-up payable in USDC: the repo's constant carries the
-// ruling in its doc comment ("USDC on Base is NOT accepted for credit
-// top-ups"), and a copied literal carries the value without the ruling. The
+// rule in its doc comment ("USDC on Base is NOT accepted for credit
+// top-ups"), and a copied literal carries the value without the rule. The
 // address was correct; what the copy dropped was everything around it.
 //
 // Three copies of the token addresses existed at one point in this package.

@@ -1,28 +1,12 @@
 /**
  * The x402 payment leg.
  *
- * This is the part that must match the proven client byte-for-byte in
- * behaviour: `api/erpc/x402-rpc-api/.e2e-local/run-e2e-topup.mjs`. Same
- * packages, same pinned versions (@x402/core and @x402/evm 2.13.0), same
- * call order.
- *
- * Why that file and not some other reference. Predicate: `git grep -l "@x402/"`
- * over the tracked tree, then read each hit for which SIDE it is on.
- *
- *   run-e2e-topup.mjs   pays the top-up endpoint      <- the reference
- *   run-e2e-evm.mjs     pays the RPC endpoint instead
- *   x402-rpc-api/src/*  the server that charges (`@x402/core/server`,
- *                       `@x402/evm/exact/server`, `paymentMiddleware`)
- *   x402-rpc-api/test/* `@x402/core/types` only; they drive app.fetch, they
- *                       do not sign
- *
- * `src/middleware/x402.ts` is the near-miss worth naming: it RE-EXPORTS
- * `encodePaymentSignatureHeader`, so a grep for signing symbols hits it even
- * though every one of its own imports is from a `/server` path. Reading the
- * hits rather than counting them is what separates it from a real signer.
- *
- * This is a statement about this repository, not about the world: someone with
- * their own wallet can pay the same endpoint without anything here knowing.
+ * This is the part that must behave exactly like a known-good paying client:
+ * the same packages, the same pinned versions (@x402/core and @x402/evm
+ * 2.13.0), and the same call order as the reference x402 client that has paid
+ * ERPC's top-up endpoint. Only the CLIENT side of the SDK is imported here
+ * (`@x402/core/client`, `@x402/core/http`, `@x402/evm/exact/client`); the
+ * `/server` entry points belong to the service that charges.
  *
  * The payer needs no ETH: EIP-3009 `transferWithAuthorization` is gasless for
  * the payer and the facilitator submits the transaction. That is why Base
@@ -104,9 +88,9 @@ const sameRequirement = (a: SignTarget, b: Record<string, unknown>): boolean =>
  * 🔴 It is extracted for a reason. The end-to-end test signs a divergent
  * challenge and passes -- but it passes because BARRIER 1 works, so deleting
  * barrier 2 entirely would leave that suite green. A defence whose only
- * evidence is another defence working is not independently verified
- *, and barrier 2 exists precisely because barrier 1
- * depends on SDK behaviour this worker does not own.
+ * evidence is another defence working is not independently verified, and
+ * barrier 2 exists precisely because barrier 1 depends on SDK behaviour this
+ * worker does not own.
  *
  * Checks all five fields, not the two the EIP-3009 authorization carries:
  * "10000 EURC to X" and "10000 USDC to X" share a payee and an amount.
@@ -147,8 +131,8 @@ export function assertSignedMatchesTarget(payload: unknown, target: SignTarget):
  * top-ups, the ledger row -- is computed from the requirement `selectRequirement`
  * picked. With the default selector, none of those checks constrain the thing
  * that actually gets signed: a resource can list a large payment to an
- * attacker first and the reviewed one second, pass every policy check on the
- * second, and be signed for the first. Reproduced: policy violations 0,
+ * attacker first and the policy-checked one second, pass every policy check
+ * on the second, and be signed for the first. Reproduced: policy violations 0,
  * ledger row EURC, signature 49 USDC to an unrelated address.
  *
  * The reference client never had this hole because it refused any challenge

@@ -15,7 +15,7 @@
 import { canonicalNetwork, SOLANA_MAINNET_CAIP2 } from './networks'
 import { BASE_NETWORK } from './x402'
 
-/** Wishlist items from the plan's appendix A, in the order they unblock. */
+/** What the published SDK still lacks for each route, in the order they unblock. */
 export type Wish = 'W1' | 'W2' | 'W3' | 'W4'
 
 export const WISH_REASON: Record<Wish, string> = {

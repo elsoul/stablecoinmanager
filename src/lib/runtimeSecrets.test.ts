@@ -70,7 +70,7 @@ test('the MCP surface is guarded on ONLY what it uses', () => {
 })
 
 test('the MCP surface still refuses a blank signing key', () => {
-  // The case N2 was about: a whitespace-only secret is accepted by sign/verify,
+  // The case this guards: a whitespace-only secret is accepted by sign/verify,
   // so it must read as missing here or the surface runs on a key the operator
   // believes is unset.
   for (const blank of ['', ' ', '\n', '\t']) {

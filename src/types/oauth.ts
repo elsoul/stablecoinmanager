@@ -10,7 +10,7 @@ export interface TokenResponse {
  * The shape this worker consumes from an auth-api access token. auth-api signs
  * it with its own customer JWT secret, which this worker deliberately does NOT
  * hold: the token is read as a value handed to us over TLS by its issuer on a
- * back-channel POST, exactly as api/mcp/master-api reads Discord's token
+ * back-channel POST, the way any OAuth client reads a token endpoint's
  * response. We therefore decode, never verify, and we never forward it.
  */
 export interface AuthApiClaims {

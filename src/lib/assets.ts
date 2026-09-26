@@ -34,10 +34,10 @@ const CATALOG: Array<AssetPreference & { symbol: string }> = [
  *
  * It was the last reader on the money path outside the brand. Harmless while
  * it read only `allowedAssets` and `allowedNetworks`, neither of which is
- * overridable -- and that is exactly the shape named at review:
- * one function outside the barrier reads as "the barrier covers everything"
- * until the day someone makes an asset list overridable, at which point this
- * is the only place still consulting the ceiling.
+ * overridable -- and that is exactly the risky shape: one function outside
+ * the barrier reads as "the barrier covers everything" until the day someone
+ * makes an asset list overridable, at which point this is the only place
+ * still consulting the ceiling.
  *
  * Making it a type error today costs one word and removes a future silent
  * divergence, which is the trade the rest of this package has already made
@@ -54,14 +54,14 @@ export function allowedAssetPreferences(policy: EffectivePolicyValue): AssetPref
  * The subset an ERPC credit top-up may be paid in: EURC only.
  *
  * 🔴 This is NOT the policy's business and must not widen with it. Top-ups are
- * EURC-denominated by a standing ruling -- `constants/base.ts` records it on
+ * EURC-denominated by design -- `constants/base.ts` records it on
  * USDC_BASE_MAINNET_CONTRACT: "USDC on Base is NOT accepted for credit top-ups
  * (design decision, 2026-09-10: top-ups are EURC-denominated only)".
  *
  * Without this, `erpc_topup` inherits x402_pay's preferences, and a 402 that
  * offered USDC would be paid in USDC -- correct as a payment, wrong as a
  * top-up, and wrong quietly. Relying on the server never offering USDC would
- * make a ruling depend on the other side's configuration.
+ * make that rule depend on the other side's configuration.
  *
  * The policy still applies on top: it can narrow this to nothing (by removing
  * EURC or the Base network), it just cannot add USDC back.

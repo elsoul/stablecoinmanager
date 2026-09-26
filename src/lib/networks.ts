@@ -38,10 +38,9 @@
  * This paragraph used to claim the gate was a type called `NetworkId` and
  * that a raw string "cannot be compared against policy.allowedNetworks at
  * all". That type no longer exists, and the sentence was false while it did
- * -- it is the exact claim round 5 falsified with `some(n => n === id)`
- *. Leaving it here would have been worse than
- * never writing it: the honest account sits directly below, and a reader
- * reaches this one first.
+ * -- `some(n => n === id)` compared one against a raw string just fine.
+ * Leaving it here would have been worse than never writing it: the honest
+ * account sits directly below, and a reader reaches this one first.
  */
 
 declare const NETWORK_ALLOWLIST: unique symbol
@@ -51,9 +50,9 @@ declare const NETWORK_ALLOWLIST: unique symbol
  *
  * 🔴 FOURTH attempt at one defect, and the first three each failed the same
  * way: the guard enumerated forms, and a form outside the list came back.
- *   1. a grep for `.includes` scoped to route/mcp/tools  -- lost to lib/policy.ts (B-7)
- *   2. the same grep widened to the tree                 -- lost to `new Set(x).has(id)` (B-8)
- *   3. a branded element type `NetworkId`                -- lost to `some(n => n === id)` (B-9)
+ *   1. a grep for `.includes` scoped to route/mcp/tools  -- lost to lib/policy.ts
+ *   2. the same grep widened to the tree                 -- lost to `new Set(x).has(id)`
+ *   3. a branded element type `NetworkId`                -- lost to `some(n => n === id)`
  *
  * Step 3 is worth naming precisely, because it looked structural. A branded
  * `string & {...}` is a SUBTYPE of string, so TypeScript happily compares it
@@ -74,9 +73,9 @@ declare const NETWORK_ALLOWLIST: unique symbol
  * Both read as wrong at the call site, which is the most an in-process
  * boundary can do. Claiming more than that is the mistake this file has made
  * three times in docblocks: `EffectivePolicyValue`'s "regardless of how it
- * was spelled" (round 3), "every network check" (round 4), and "cannot be
- * compared at all" (round 5). The first version of THIS list named only
- * `toJSON()` and missed the field that became `describe()` (round 6).
+ * was spelled", "every network check", and "cannot be compared at all". The
+ * first version of THIS list named only `toJSON()` and missed the field that
+ * became `describe()`.
  */
 export interface NetworkAllowlist {
   /** The only question. Both sides are canonicalised. */
@@ -84,11 +83,11 @@ export interface NetworkAllowlist {
   /**
    * For messages. A METHOD, not a field, because a field invites
    * `allowedNetworks.rendered.includes(id)` -- which compiles, reads exactly
-   * like the array `.includes` this file spent four rounds removing, and is
+   * like the array `.includes` this file exists to remove, and is
    * WRONG IN THE OPEN DIRECTION: substring matching answers true for
-   * "eip155:8" and "solana" against "eip155:8453, solana-mainnet"
-   *. Two explicit steps is the most a boundary can
-   * ask for; one field access was not enough.
+   * "eip155:8" and "solana" against "eip155:8453, solana-mainnet". Two
+   * explicit steps is the most a boundary can ask for; one field access was
+   * not enough.
    */
   describe(): string
   /** Wire shape. Kept so tool payloads still serialise as an array. */
@@ -153,5 +152,5 @@ export function canonicalNetwork(id: string): string {
 // `networkAllowed(allowed: readonly string[], id)` used to live here. It was
 // removed once `NetworkAllowlist` landed: it had no production caller left,
 // and an exported function whose entire job is to answer the question against
-// an ARRAY is a standing invitation to go back to arrays
-//. Ask a NetworkAllowlist instead.
+// an ARRAY is a standing invitation to go back to arrays. Ask a
+// NetworkAllowlist instead.

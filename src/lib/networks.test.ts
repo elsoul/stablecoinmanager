@@ -33,10 +33,11 @@ test('an unrelated chain is not aliased into allowance', () => {
 })
 
 test('REACH: the shipped default allowlist can name a real bridge endpoint', () => {
-  // This is the test that would have caught B-5. The old check compared raw
-  // strings, so EVERY endpoint the SDK ships failed against the shipped
-  // default -- and a tool that refuses everything looks exactly like a tool
-  // whose policy is simply strict.
+  // This is the test that would have caught the vocabulary defect (the SDK
+  // names Solana in CAIP-2, the config says `solana-mainnet`). The old check
+  // compared raw strings, so EVERY endpoint the SDK ships failed against the
+  // shipped default -- and a tool that refuses everything looks exactly like
+  // a tool whose policy is simply strict.
   const shipped = loadPolicy({} as never).allowedNetworks
   const caps = bridgeCapabilities()
   assert.ok(caps.length > 0, 'the SDK ships no bridge capabilities to measure against')
@@ -53,8 +54,8 @@ test('REACH: the shipped default allowlist can name a real bridge endpoint', () 
   // vocabulary fix is responsible for; whether a whole CAPABILITY clears the
   // allowlist is a separate policy decision. Today it is zero, because the
   // two capabilities the SDK ships run Ethereum mainnet <-> Solana and
-  // eip155:1 is deliberately not allowed -- "B-5 is closed" must not be read
-  // as "bridge works in production". Anyone widening the
+  // eip155:1 is deliberately not allowed -- "the vocabulary defect is fixed"
+  // must not be read as "bridge works in production". Anyone widening the
   // allowlist can read this number to see what changed.
   const wholeCapabilities = caps.filter(
     (c) => shipped.allows(c.sourceChainId) && shipped.allows(c.destinationChainId),
@@ -160,7 +161,7 @@ test('BARRIER: the allowlist cannot be searched, only asked', () => {
   // which `pnpm check` already runs.
   //
   // Each line below is a shape that actually defeated an earlier guard:
-  // includes (B-5), Set.has (B-8), some/=== (B-9).
+  // `includes`, `Set.has`, and `some` with `===`.
   const allowed = networkAllowlist(['eip155:8453'])
   const raw: string = 'eip155:8453'
 
@@ -172,11 +173,11 @@ test('BARRIER: the allowlist cannot be searched, only asked', () => {
   // makes that line a directive, which is how this comment first became a
   // TS2578 error about itself.)
   const searchShapes = (list: NetworkAllowlist, id: string): void => {
-    // @ts-expect-error searching the allowlist must not be expressible (B-5)
+    // @ts-expect-error searching the allowlist must not be expressible
     list.includes(id)
-    // @ts-expect-error nor via a Set built from it (B-8)
+    // @ts-expect-error nor via a Set built from it
     new Set(list).has(id)
-    // @ts-expect-error nor by iterating it (B-9)
+    // @ts-expect-error nor by iterating it
     list.some((a: string) => a === id)
     // @ts-expect-error nor by index
     list[0]
@@ -201,7 +202,7 @@ test('prototype keys are ordinary unknown ids, not inherited properties', () => 
   // 🔴 Derived, not enumerated. The
   // safety does not depend on this list -- Object.hasOwn closes inherited
   // properties as a class -- but a regression detector that enumerates is the
-  // exact habit this PR has now paid for four times.
+  // exact habit this package has already paid for four times.
   const hostile = [
     ...Object.getOwnPropertyNames(Object.prototype),
     '__proto__',

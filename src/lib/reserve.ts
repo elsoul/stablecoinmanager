@@ -118,8 +118,8 @@ export function policyFromOverrideRows(
  * Zeroed amounts and empty allowlists, so a broken ceiling refuses every
  * payment instead of falling back to something permissive.
  *
- * 🔴 Scope, corrected. Three places in this PR said this fires when the
- * worker "cannot read POLICY_*". Measured: it does not. `loadPolicy({})`
+ * 🔴 Scope. It is easy to assume this fires when the worker "cannot read
+ * POLICY_*". Measured: it does not. `loadPolicy({})`
  * returns the BUILT-IN DEFAULTS and does not throw -- `numberVar` and
  * `listVar` both `return fallback` on `undefined`, deliberately, and
  * `policy.test.ts` pins that behaviour by name. `loadPolicy` throws only when

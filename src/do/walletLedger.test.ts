@@ -247,13 +247,12 @@ test('SOURCE: claimExportThrottle uses the shared throttle guard', () => {
 })
 
 test('SOURCE: reservePayment contains no await', () => {
-  // The acceptance condition here, and the same mechanism as
-  // claimExportThrottle: Durable Objects serialise METHOD CALLS, not the span
-  // across an `await`. Reading today's total in one call and inserting in
-  // another lets two payments interleave and both pass a ceiling only one of
-  // them fits under. What makes this atomic is that nothing suspends between
-  // the SELECT and the INSERT -- and that is invisible at a glance, so it is
-  // checked here.
+  // A hard requirement, for the same reason as claimExportThrottle: Durable
+  // Objects serialise METHOD CALLS, not the span across an `await`. Reading
+  // today's total in one call and inserting in another lets two payments
+  // interleave and both pass a ceiling only one of them fits under. What
+  // makes this atomic is that nothing suspends between the SELECT and the
+  // INSERT -- and that is invisible at a glance, so it is checked here.
   const body = methodBody('reservePayment')
   assert.ok(!/\bawait\b/.test(body), 'reservePayment must not suspend')
   // Anchored: `INSERT INTO payments` is a prefix of `INSERT INTO payments_x`,
@@ -453,10 +452,11 @@ test('SOURCE: every exit after the reservation resolves the row', () => {
 
 test('SOURCE: x402Pay delegates the post-resend decision, it does not re-derive it', () => {
   // This replaces a set of textual pins. Three re-introductions of one
-  // fail-open were caught here by pinning shapes (B-2, C-1, O-3), and each
-  // pin only covered the shapes someone had thought of -- O-3 was still open
-  // at one point because `if (!accepted)` could be narrowed without
-  // touching any pinned line.
+  // fail-open (requiring a hash for acceptance, appending
+  // `&& Boolean(txHash)`, narrowing `if (!accepted)`) were caught here by
+  // pinning shapes, and each pin only covered the shapes someone had thought
+  // of -- the third stayed open for a while because `if (!accepted)` could be
+  // narrowed without touching any pinned line.
   //
   // The decision now lives in lib/settle.ts, which node CAN load, and is
   // swept over its whole input grid there. What remains to check here is only
@@ -606,9 +606,9 @@ test('SOURCE: signPayment actually calls barrier 2', () => {
   // rc=0, because the four new tests call the function directly and the three
   // end-to-end ones pass on barrier 1 alone.
   //
-  // This package has been here before. In round 1 the EURC-only top-up
-  // restriction was "only as real as one unchecked wire" -- the control did
-  // not fire until a SOURCE test pinned the call site. Same fix, same reason.
+  // This package has been here before. The EURC-only top-up restriction was
+  // once "only as real as one unchecked wire" -- the control did not fire
+  // until a SOURCE test pinned the call site. Same fix, same reason.
   const body = methodBody('signPayment', 'chain/x402Client.ts')
   assert.match(
     body,
@@ -636,11 +636,12 @@ test('SOURCE: signPayment actually calls barrier 2', () => {
 })
 
 test('SOURCE: erpc_topup seeds its invoice number from the payment response', () => {
-  // The other half of N-7. x402_pay records the invoice number in the ledger
-  // on the synchronous grant; erpc_topup's OWN answer was still built from a
-  // variable only the poll loop assigns, and that loop never runs when the
-  // grant completed inline (`status !== 'granted'`). So the tool promised an
-  // invoice number and returned none on the fastest outcome.
+  // The other half of reporting an invoice number on the fastest outcome.
+  // x402_pay records it in the ledger on the synchronous grant; erpc_topup's
+  // OWN answer was still built from a variable only the poll loop assigns,
+  // and that loop never runs when the grant completed inline
+  // (`status !== 'granted'`). So the tool promised an invoice number and
+  // returned none on the fastest outcome.
   const source = readFileSync(
     join(import.meta.dirname, '..', 'route', 'mcp', 'tools', 'erpcTopup.ts'),
     'utf8',
@@ -675,8 +676,8 @@ test('REACH: an override written to the real table refuses the next payment', ()
   // to THIS payment" was held by a SOURCE pin alone, and the pin passes a
   // broken implementation: `policyFromOverrideRows(loadPolicy(env), rows)`
   // changed to `(..., [])` keeps every token the pin looks for -- the SELECT,
-  // the composition, the ceiling -- while discarding what it read. Measured
-  // at the previous head: 237 pass, 0 red.
+  // the composition, the ceiling -- while discarding what it read. Measured:
+  // 237 pass, 0 red.
   //
   // So this runs the chain instead of reading it: write an override with the
   // real upsert into the real schema, read it back with the SAME string

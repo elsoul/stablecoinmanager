@@ -1,8 +1,12 @@
 import { Hono } from 'hono'
 import type { AppContext } from '@/types/env'
+import type { AuthApiClaims } from '@/types/oauth'
 import { decodeState } from '@/utils/state'
 import { createKVStore } from '@/utils/kv'
 import { exchangeAuthApiCode } from '@/utils/authApi'
+import { exchangeAppOidcCode, oidcTxnKey, resolveAppOidcConfig } from '@/utils/appOidc'
+import { getAppOidcJwksClient } from '@/utils/appOidcJwks'
+import { resolveAuthProvider } from '@/utils/authProvider'
 import { evaluateLogin } from '@/utils/allowlist'
 import { safeLog } from '@/utils/redact'
 import { getRegisteredClient } from './client'
@@ -20,6 +24,7 @@ function generateAuthorizationCode(): string {
 
 callbackRouter.get('/', async (c) => {
   try {
+    const provider = resolveAuthProvider(c.env)
     const code = c.req.query('code')
     const state = c.req.query('state')
     const upstreamError = c.req.query('error')
@@ -47,7 +52,7 @@ callbackRouter.get('/', async (c) => {
     const stateData = await decodeState(state, c.env.OAUTH_STATE_SECRET)
     const kv = createKVStore(c.env.MCP_KV)
 
-    if (!stateData.clientId || !stateData.redirectUri || !stateData.upstreamVerifier) {
+    if (!stateData.clientId || !stateData.redirectUri || (provider !== 'app-oidc' && !stateData.upstreamVerifier)) {
       return c.json(
         {
           error: 'invalid_request',
@@ -70,28 +75,87 @@ callbackRouter.get('/', async (c) => {
       )
     }
 
-    const { claims, providerFromResponse } = await exchangeAuthApiCode({
-      baseUrl: c.env.AUTH_API_BASE_URL,
-      clientId: c.env.AUTH_API_CLIENT_ID,
-      redirectUri: `${c.env.MCP_SERVER_BASE_URL}/oauth/callback`,
-      code,
-      codeVerifier: stateData.upstreamVerifier,
-    })
+    let loginClaims: AuthApiClaims
+    if (provider === 'app-oidc') {
+      const appOidcConfig = resolveAppOidcConfig(c.env)
 
-    // The token claim and the response envelope must agree. If they do not,
-    // something is answering that is not the auth-api we think it is.
-    if (providerFromResponse && providerFromResponse !== claims.provider) {
-      safeLog(c.env, 'provider mismatch between token claim and response envelope')
-      return c.json(
-        {
-          error: 'access_denied',
-          error_description: 'Identity provider could not be established',
-        },
-        403,
-      )
+      const issParam = c.req.query('iss')
+      if (issParam !== appOidcConfig.issuer) {
+        safeLog(c.env, 'login refused', { reason: 'app_oidc_iss_param_mismatch' })
+        return c.json(
+          {
+            error: 'access_denied',
+            error_description: 'Identity provider could not be established',
+          },
+          403,
+        )
+      }
+
+      const txnKey = await oidcTxnKey(state)
+      const verifier = await kv.get(txnKey)
+      await kv.del(txnKey)
+      if (!verifier) {
+        safeLog(c.env, 'login refused', { reason: 'app_oidc_txn_missing' })
+        return c.json(
+          {
+            error: 'access_denied',
+            error_description: 'Identity provider could not be established',
+          },
+          403,
+        )
+      }
+
+      const result = await exchangeAppOidcCode({
+        issuer: appOidcConfig.issuer,
+        clientId: appOidcConfig.clientId,
+        redirectUri: `${c.env.MCP_SERVER_BASE_URL}/oauth/callback`,
+        code,
+        codeVerifier: verifier,
+        expectedNonce: stateData.nonce,
+        now: () => Date.now(),
+        getJwks: (opts) => getAppOidcJwksClient(appOidcConfig.issuer).getJwks(opts),
+      })
+
+      if (!result.ok) {
+        safeLog(c.env, 'login refused', { reason: `app_oidc_${result.reason}` })
+        return c.json(
+          {
+            error: 'access_denied',
+            error_description: 'Identity provider could not be established',
+          },
+          403,
+        )
+      }
+
+      loginClaims = result.claims
+    } else {
+      if (!stateData.upstreamVerifier) {
+        throw new Error('unreachable: upstreamVerifier missing outside the app-oidc branch')
+      }
+      const { claims, providerFromResponse } = await exchangeAuthApiCode({
+        baseUrl: c.env.AUTH_API_BASE_URL,
+        clientId: c.env.AUTH_API_CLIENT_ID,
+        redirectUri: `${c.env.MCP_SERVER_BASE_URL}/oauth/callback`,
+        code,
+        codeVerifier: stateData.upstreamVerifier,
+      })
+
+      // The token claim and the response envelope must agree. If they do not,
+      // something is answering that is not the auth-api we think it is.
+      if (providerFromResponse && providerFromResponse !== claims.provider) {
+        safeLog(c.env, 'provider mismatch between token claim and response envelope')
+        return c.json(
+          {
+            error: 'access_denied',
+            error_description: 'Identity provider could not be established',
+          },
+          403,
+        )
+      }
+      loginClaims = claims
     }
 
-    const decision = evaluateLogin(claims, c.env.ALLOWED_GOOGLE_EMAILS)
+    const decision = evaluateLogin(loginClaims, c.env.ALLOWED_GOOGLE_EMAILS)
     if (!decision.ok) {
       // The reason is logged, not returned: an unauthorized caller learns only
       // that they are unauthorized, never why or who would be.

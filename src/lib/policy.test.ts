@@ -40,7 +40,7 @@ const topup = {
   payTo: ERPC_TREASURY_BASE,
 }
 
-test('the canary payment passes every ceiling', () => {
+test('a small EURC top-up to the ERPC treasury passes every ceiling', () => {
   assert.deepEqual(checkPayment(asEffective(POLICY), topup, 0), [])
 })
 

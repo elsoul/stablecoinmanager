@@ -1,11 +1,11 @@
 /**
  * The ONLY path from this worker to a chain.
  *
- * Design ruling for this project: chain reach comes from `@elsoul/erpc-sdk`
- * and nowhere else. No private RPC client, no direct provider URL, no quiet
- * fallback. When the published SDK cannot do something yet, the tool that
- * needs it says so in its result -- `unsupported_yet` with the wishlist id it
- * is waiting on -- instead of reaching around the SDK.
+ * By design, chain reach comes from `@elsoul/erpc-sdk` and nowhere else. No
+ * private RPC client, no direct provider URL, no quiet fallback. When the
+ * published SDK cannot do something yet, the tool that needs it says so in its
+ * result -- `unsupported_yet` with the wishlist id it is waiting on -- instead
+ * of reaching around the SDK.
  *
  * The capability boundary below is measured, not assumed. Re-fired against
  * the published tarball of @elsoul/erpc-sdk **0.8.1** (2026-09-24), which is
@@ -30,9 +30,9 @@
  * `dist/index.js` PLUS `*.d.ts` while the 11 it was compared against counted
  * one bundle, so a difference in predicate was reported as a difference in
  * the thing measured. The mechanism offered for it cannot hold either --
- * `src/transport/fetch.ts` is one line and contains no namespace identifier
- *. State the predicate with the number; that is what makes
- * the next re-measurement comparable.
+ * `src/transport/fetch.ts` is one line and contains no namespace identifier.
+ * State the predicate with the number; that is what makes the next
+ * re-measurement comparable.
  *
  * Re-measure against the tarball (never the GitHub source tree, which carries
  * unreleased additions) when a new version ships, and convert the

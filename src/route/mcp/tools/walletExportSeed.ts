@@ -32,7 +32,7 @@ export async function walletExportSeed(
   const mnemonic = env.WALLET_MNEMONIC?.trim() ?? ''
   if (!mnemonic) {
     return fail({ exported: false, state: 'not_initialized' }, [
-      'Run `pnpm -F mcp-stablecoin-manager wallet:init` first.',
+      'Run `pnpm wallet:init` first.',
     ])
   }
 

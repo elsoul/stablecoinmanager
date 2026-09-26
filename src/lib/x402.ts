@@ -1,8 +1,8 @@
 /**
  * Reading a 402, as data.
  *
- * The signing itself is `@x402/core` + `@x402/evm`, exactly as the proven
- * client in `api/erpc/x402-rpc-api/.e2e-local/run-e2e-topup.mjs` does it.
+ * The signing itself is `@x402/core` + `@x402/evm`, exactly as the reference
+ * x402 client does it (see chain/x402Client.ts).
  * What lives here is the part that decides *whether we are willing to pay*,
  * kept free of the SDK and of `cloudflare:workers` so it can be driven
  * directly by tests rather than re-implemented in them.
@@ -91,8 +91,8 @@ export function normalizeAccepts(accepts: unknown): NormalizedRequirement[] {
 /**
  * Pick which requirement to pay.
  *
- * Preference is by (network, asset) in the order the plan fixes: EURC on Base
- * first, then USDC on Base. A requirement this worker cannot sign is never
+ * Preference is by (network, asset) in a fixed order: EURC on Base first,
+ * then USDC on Base. A requirement this worker cannot sign is never
  * chosen, and choosing nothing is an answer rather than a fallback to
  * whatever happened to be first.
  */

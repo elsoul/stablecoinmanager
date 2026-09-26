@@ -32,8 +32,8 @@ test('plan, swap, bridge and policy_set are exposed, and wallet_export_seed stay
   }
   // Ordering is not cosmetic: a model reads tools/list top to bottom, and the
   // one that reveals the recovery phrase should not sit among the routine
-  // ones. It has stayed last through every round of tools added; adding more
-  // tools must not move it.
+  // ones. It has stayed last every time tools were added; adding more tools
+  // must not move it.
   assert.equal(TOOL_NAMES[TOOL_NAMES.length - 1], 'wallet_export_seed')
 })
 

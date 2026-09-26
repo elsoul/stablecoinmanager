@@ -76,8 +76,8 @@ test('planSwap reports the approval gap without signing anything', async () => {
 test('BARRIER: this module is still unreached from production', () => {
   // 🔴 An inverted pin: it fails when the condition it describes stops being
   // true. The module's banner says nothing in production imports it, and a
-  // banner is a claim that rots silently -- exactly the class this package
-  // spent seven review rounds on. Wiring the module in reddens here, and the
+  // banner is a claim that rots silently -- a defect class this package has
+  // already had to fix repeatedly. Wiring the module in reddens here, and the
   // fix is to delete the banner and this test in the same commit.
   //
   // Counted from src rather than from a remembered list, because the version

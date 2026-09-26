@@ -29,7 +29,7 @@ export interface PayArgs {
    *
    * Callers inside this worker pass it to enforce a constraint the POLICY does
    * not own -- erpc_topup passes EURC only, because top-ups are
-   * EURC-denominated by a standing ruling. It is NOT part of the tool's input
+   * EURC-denominated by design. It is NOT part of the tool's input
    * schema: an MCP client cannot set it, so it can only ever narrow.
    */
   assetPreferences?: readonly AssetPreference[]
@@ -162,8 +162,8 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   }
   if (reservation.kind === 'over_daily_ceiling') {
     // The whole refusal comes from one place, tested end to end. Assembling
-    // it here again is what let a branch truncate the reasons it asked for
-    //. See route/mcp/refusal.ts.
+    // it here again is what let a branch truncate the reasons it asked for.
+    // See route/mcp/refusal.ts.
     return refusalFor(reservation, chosen)
   }
   if (reservation.kind === 'policy_violation') {
@@ -181,8 +181,8 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // Deleting the policy_violation branch above compiled and left 237 tests
   // green, falling through to `signPayment` -- signing a payment the ledger
   // refused and did not record, which this file's own docblock names as the
-  // one state that loses money. This PR added that variant; the branch that
-  // handles it was one forgotten `if` away from never existing.
+  // one state that loses money. The branch that handles that variant was one
+  // forgotten `if` away from never existing.
   //
   // Both directions are closed: a new variant is a compile error here, and
   // if one reaches this line at runtime anyway, nothing is signed.
@@ -282,9 +282,10 @@ export async function x402Pay(env: Env, args: PayArgs): Promise<ToolResult> {
   // excluding `stuck`, reached from the other side.
   // ---------------------------------------------------------------------
   // 🔴 ONE decision, computed once, in a module that can be executed under
-  // `node --test`. Three separate re-introductions of the same fail-open were
-  // caught here by source-shape pins (B-2, C-1, O-3); lib/settle.ts replaces
-  // those pins with a swept input grid. Nothing below re-derives acceptance.
+  // `node --test`. Three separate re-introductions of the same fail-open (a
+  // transaction hash deciding acceptance, in three different spellings) were
+  // caught here by source-shape pins; lib/settle.ts replaces those pins with a
+  // swept input grid. Nothing below re-derives acceptance.
   const outcome = settleOutcome({
     httpStatus: paid.status,
     bodyStatus: paidBody.status,

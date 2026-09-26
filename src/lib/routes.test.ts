@@ -111,8 +111,8 @@ test('🔴 a Solana pool is not routable: no quote adapter and no fee', () => {
 
 test('🔴 a native asset cannot be the INPUT, but can be the output', () => {
   // The preparation's transaction is `value: '0'` and its path entries are
-  // `standard: 'erc20'`, so native ETH cannot start a swap. The plan's stated
-  // canary, "0.001 ETH -> USDC", is not executable as written; WETH -> USDC is.
+  // `standard: 'erc20'`, so native ETH cannot start a swap: ETH -> USDC is
+  // impossible, WETH -> USDC works.
   const routes = routableSwaps(TOKENS, [
     pool({ token0DeploymentId: 'deployment-0001', token1DeploymentId: 'deployment-0008' }),
   ])

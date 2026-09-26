@@ -16,12 +16,10 @@ import {
 // ---------------------------------------------------------------------------
 // Golden derivation vectors.
 //
-// The Solana addresses are the SAME ones pinned by the proven implementation
-// this module's slip10.ts was copied from
-// (`wallet/packages/core/src/keyring/solana.test.ts`), which captured them from
-// the trusted `ed25519-hd-key` implementation before that dependency was
-// dropped. Reproducing them here is what proves the copy + the ed25519 public
-// key step + the base58 encoding compose back into the original behavior.
+// The Solana addresses were captured from the `ed25519-hd-key` library, the
+// widely used implementation that slip10.ts replaces. Reproducing them here is
+// what proves the SLIP-0010 derivation + the ed25519 public key step + the
+// base58 encoding compose back into that behavior.
 //
 // The EVM addresses are the two canonical public BIP-44 vectors: the Hardhat
 // default account #0 and the abandon-x11-about account #0. They pin
@@ -110,8 +108,9 @@ test('solana: the derived key signs, and is not reachable as a value', () => {
 test('BARRIER: no production file reads key material off the derivation', () => {
   // The closure is the barrier; this pins that nothing walked around it by
   // reintroducing an accessor. Scanning src rather than one directory,
-  // because scoping a guard to the place the last defect was found is how
-  // B-7 survived the B-5 fix in this same package.
+  // because scoping a guard to the place the last defect was found is how a
+  // raw network comparison in lib/policy.ts survived a fix scoped to the tools
+  // directory, in this same package.
   const root = join(import.meta.dirname, '..')
   const offenders: string[] = []
   const walk = (dir: string) => {
@@ -290,13 +289,12 @@ test('the comment stripper: what it hides, measured rather than assumed', () => 
   // module-private -- and an unmeasured limit is how a backstop quietly
   // becomes the only guard.
   //
-  // 🔴 The review named three shapes and one of them was wrong. Regex
-  // literals were measured here and do NOT hide: a bare `//` cannot appear
-  // in one, since it would close the literal. Template literals do, and they
-  // were not on the list. Copying the three across without driving them
-  // would have pinned a case that does not exist while leaving a real one
-  // unnamed -- the same transcription slip this PR already corrected once in
-  // the plan doc.
+  // 🔴 Three shapes were proposed as hiding a violation, and one of them was
+  // wrong. Regex literals were measured here and do NOT hide: a bare `//`
+  // cannot appear in one, since it would close the literal. Template literals
+  // do, and they were not on the list. Copying the three across without
+  // driving them would have pinned a case that does not exist while leaving a
+  // real one unnamed.
   assert.match(code('const u = "https://x"; getHdKey()'), /getHdKey/, 'a URL must not eat the line')
   assert.doesNotMatch(code('// getHdKey()'), /getHdKey/, 'a real comment is removed')
 

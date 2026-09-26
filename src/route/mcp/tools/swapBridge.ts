@@ -27,10 +27,9 @@ export interface BridgeArgs {
  * 🔴 This tool does NOT broadcast. Its job is to establish that the
  * SDK-side plumbing resolves: route, policy, quote, and the approval that has
  * to happen first. Broadcasting is a second signature on a second
- * transaction, and the plan's acceptance for it is a production run that has
- * not happened — the wallet is unfunded. Shipping a tool that signs on a path
- * nobody has executed is the thing the ceiling exists to prevent, done on
- * purpose.
+ * transaction, and no broadcast from this worker has been run against a live
+ * chain yet. Shipping a tool that signs on a path nobody has executed is the
+ * thing the ceiling exists to prevent, done on purpose.
  */
 /**
  * One slippage check, used by both tools.

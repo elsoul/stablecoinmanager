@@ -32,12 +32,13 @@ test('the mapping produces usable rows from the shipped catalogue', () => {
   }
 })
 
-test('the real catalogue yields real routes, on the chains measured in the plan', () => {
+test('the real catalogue yields named routes on Ethereum and Avalanche', () => {
   const routes = routableSwaps(catalogTokens(), catalogPools())
 
   // Not a count: counts move with every SDK release. The property is that
-  // routes exist and land on the chains the plan's measurement found, and
-  // that the pairs are named rather than discovered-token hashes.
+  // routes exist, that they include Ethereum (eip155:1) and Avalanche
+  // (eip155:43114), and that the pairs are named rather than discovered-token
+  // hashes.
   assert.ok(routes.length > 0, 'at least one pair is quotable today')
 
   const chains = new Set(routes.map((r) => r.chainId))
@@ -87,6 +88,6 @@ test('🔴 Base and Solana yield no routes from the real catalogue', () => {
   assert.ok(solanaPools.length > 0, 'the catalogue does ship Solana pools')
   assert.ok(
     solanaPools.every((p) => p.feeNumerator === null || p.feeDenominator === null),
-    'and they are the feeless ones the plan measured',
+    'and every Solana pool is missing its fee',
   )
 })
