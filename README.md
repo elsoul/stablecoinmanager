@@ -2,7 +2,7 @@
 
 An MCP server that manages stablecoin payments for AI agents: it reads a service's x402 payment requirements, swaps whatever the agent's wallet holds into the required stablecoin on Uniswap, bridges when the funds sit on another network, pays, and keeps receipts and spending limits — all over the RPC line via erpc-sdk.
 
-ETHGlobal Tokyo 2026 · Continuity Track. ERPC (erpc.global, AS200261), erpc-sdk and ERPC's x402 storefront are the existing project. The MCP server is the new work: the scaffold, OAuth 2.1 login, x402 payment path, policy and ledger layer, and swap/bridge route resolution were built in the week before the event (September 21–24) in our monorepo; this repository's history replays those pull requests. Since hacking began (September 25, 21:00 JST) we added the login path through our central OIDC broker, this standalone repository as an erpc-cli template, the Uniswap developer feedback, and the first real payment from a production deployment (see "What has and has not been exercised"). Swap and bridge execution is implemented and tested but not wired to broadcast.
+ETHGlobal Tokyo 2026 · Continuity Track. ERPC (erpc.global, AS200261), erpc-sdk and ERPC's x402 storefront are the existing project. The MCP server is the new work: the scaffold, OAuth 2.1 login, x402 payment path, policy and ledger layer, and swap/bridge route resolution were built in the week before the event (September 21–24) in our monorepo; this repository's history replays those pull requests. Since hacking began (September 25, 21:00 JST) we added the login path through our central OIDC broker, this standalone repository as an erpc-cli template, the Uniswap developer feedback, Base and EVM balances in `holdings` via erpc-sdk 0.9.0, and the first real payment from a production deployment (see "What has and has not been exercised"). Swap and bridge execution is implemented and tested but not wired to broadcast.
 
 **An AI agent that can pay for things on its own, with spending limits it cannot argue its way past.**
 
@@ -200,7 +200,7 @@ it.
 | tool | what it does |
 |---|---|
 | `wallet_status` | addresses, init state, ERPC reachability, active ceilings |
-| `holdings` | balances on the networks the ERPC SDK can read (Base reports `unsupported_yet`) |
+| `holdings` | native and EURC/USDC balances via the ERPC SDK on Solana (SOL only), Ethereum, Base and Avalanche C-Chain; what it does not read is listed in `unsupported` |
 | `policy_get` | effective ceilings, overrides, and today's remaining allowance |
 | `policy_set` | **tighten** one numeric ceiling, with an audit row |
 | `x402_inspect` | read a 402 without paying |
@@ -229,12 +229,12 @@ invoice was granted after the worker's settlement checks. In the same session a
 `policy_set` that lowered the per-payment ceiling to 2 EURC made the worker
 refuse a 2.42 EURC top-up before signing.
 
-That is one payment on one rail (x402 EURC on Base). The worker itself cannot
-read Base balances yet (see "Chain access" below), so a funded wallet's balance
-is confirmed from outside the worker. `swap` and `bridge` still stop before
-signing: no live swap or bridge has been executed. Before trusting your own
-deploy with real funds, make one small payment with it and check the result
-on-chain.
+That is one payment on one rail (x402 EURC on Base). The wallet's balance was
+confirmed from outside the worker, which could not read Base balances before
+`@elsoul/erpc-sdk` 0.9.0; `holdings` now reads them itself (see "Chain access"
+below). `swap` and `bridge` still stop before signing: no live swap or bridge
+has been executed. Before trusting your own deploy with real funds, make one
+small payment with it and check the result on-chain.
 
 ---
 
@@ -425,14 +425,31 @@ key for Solana, and viem derives the secp256k1 key for the EVM chains.
 
 Every chain call goes through `@elsoul/erpc-sdk`. There is no private RPC
 client and no fallback path. When the published SDK cannot do something yet,
-the tool reports `{ ok: false, error: 'unsupported_yet', needs: 'W1' }`
-instead of working around it. The measured capability of the published SDK
-tarball (no Base namespace yet) is recorded in `src/chain/gateway.ts`. Re-measure
-against the tarball, never the GitHub source tree, when a new SDK version ships.
+the tool says so in its result (`plan` marks the leg `supported: false` with
+the wishlist id it `needs` and a `why`) instead of working around it. The
+measured capability of the published SDK tarball is recorded in
+`src/chain/gateway.ts`. Re-measure against the tarball, never the GitHub
+source tree, when a new SDK version ships.
 
-Base **balances** are therefore not readable yet (wishlist W1). That does not
-block an ERPC credit top-up. Paying the 402 is a signature plus an HTTPS
-request, and the facilitator submits the transaction.
+Since SDK 0.9.0 the worker reads Base (`eip155:8453`) through `erpc.base.rpc`
+(default endpoint `https://base.erpc.global`, same `ERPC_API_KEY` as Ethereum
+and Avalanche). `holdings` returns native SOL on Solana, and native ETH/AVAX
+plus EURC and USDC on Ethereum, Base and Avalanche C-Chain, with token
+addresses and decimals taken from the SDK catalogue (`tokens.<chain>` →
+`getTokenDeployment`). Whatever it does not read is listed in `unsupported`
+with a reason (today: Solana SPL tokens, unknown networks), and every failed
+RPC read is a `warnings` line, so a missing entry never stands for a zero.
+`wallet_status` probes all four namespaces and marks an EVM namespace
+`ok: false` if its `eth_chainId` is not the expected one (`0x1`, `0x2105`,
+`0xa86a`). `holdings` asks the same question before reading: an EVM endpoint
+that answers another chain id contributes only warnings (one per asset) and no
+balances, and a `balanceOf` call that returns no data (`0x` -- no contract code
+at the token address on that endpoint) is a warning too, never a zero.
+
+Paying an ERPC credit top-up never needed a Base RPC: the 402 is a signature
+plus an HTTPS request, and the facilitator submits the transaction. Swap and
+route planning on Base (W2) are still unsupported (`plan` answers
+`needs: 'W2'`).
 
 ---
 

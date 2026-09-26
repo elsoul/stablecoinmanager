@@ -133,7 +133,7 @@ export const TOOLS: McpTool[] = [
   ),
   tool(
     'holdings',
-    'Native and stablecoin balances across the networks the published ERPC SDK can read today (Solana, Ethereum, Avalanche C-Chain). Base is reported as unsupported_yet until the SDK gains a Base namespace.',
+    'Balances read through the ERPC SDK: native SOL on Solana; native ETH/AVAX plus EURC and USDC (addresses and decimals from the SDK token catalogue) on Ethereum, Base and Avalanche C-Chain. Anything not read -- e.g. Solana SPL tokens, an unknown network -- is listed in `unsupported` with a reason, and a failed RPC read is listed in `warnings`; a missing entry is never an implicit zero.',
     HOLDINGS_ARGS,
   ),
   tool(

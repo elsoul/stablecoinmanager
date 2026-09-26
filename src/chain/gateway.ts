@@ -34,6 +34,29 @@
  * State the predicate with the number; that is what makes the next
  * re-measurement comparable.
  *
+ * 🔴 **0.9.0 (2026-09-26) unblocks W1.** Measured in the published tarball:
+ * `ErpcClient.base.rpc` (HTTP JSON-RPC only -- `eth_chainId`, `eth_getBalance`,
+ * `eth_call`; no WebSocket), `DEFAULT_BASE_ENDPOINT = "https://base.erpc.global"`,
+ * `baseEndpoint` / `baseRpc` config overrides, `TOKEN_CHAIN_IDS.baseMainnet =
+ * "eip155:8453"`, and `tokens.base` = { ETH: deployment-0061, USDC:
+ * deployment-0062, EURC: deployment-0063 }. The public export list of 0.8.1
+ * is a strict subset of 0.9.0's (nothing removed or renamed); typecheck and
+ * the full test suite passed unchanged on 0.9.0 before any code here moved.
+ * Base is read with the same `apiKey` as Ethereum and Avalanche: the SDK
+ * routes `base` to `baseEndpoint` through the same legacy HTTP transport.
+ *
+ * Data delta 0.8.1 -> 0.9.0, measured on the two published tarballs (`npm
+ * pack` of each; predicate: `Object.keys(await import('dist/index.js'))` and
+ * the lengths of the exported catalogues): public exports 93 -> 94
+ * (+`DEFAULT_BASE_ENDPOINT`, nothing removed -- that is the "strict subset"
+ * above, measured); `TOKEN_DEPLOYMENTS` 70 -> 73 (+deployment-0061/0062/0063
+ * = Base ETH/USDC/EURC); `POOL_DEFINITIONS` 19 -> 19; `BRIDGE_CAPABILITIES_JSON`
+ * 2 -> 4 entries, all Ethereum<->Solana (as-of 2026-09-16 -> 2026-09-17). So
+ * the "exactly the two EURC" line above is a 0.8.1 fact. `bridgeRoute` in
+ * `bridge.ts` still picks the first capability for a chain pair and takes no
+ * token; harmless while nothing here signs a bridge, to be resolved before
+ * it does.
+ *
  * Re-measure against the tarball (never the GitHub source tree, which carries
  * unreleased additions) when a new version ships, and convert the
  * `unsupported_yet` branches the new version covers.
@@ -45,16 +68,27 @@ import type { Env } from '@/types/env'
 export type WishlistId = 'W1' | 'W2' | 'W3' | 'W4'
 
 /** Networks this worker can READ today, through the SDK's namespaces. */
-export const READABLE_NETWORKS = ['solana-mainnet', 'eip155:1', 'eip155:43114'] as const
+export const READABLE_NETWORKS = [
+  'solana-mainnet',
+  'eip155:1',
+  BASE_MAINNET_CAIP2_NETWORK,
+  'eip155:43114',
+] as const
 
 /**
- * Base (eip155:8453) is deliberately absent from READABLE_NETWORKS: the SDK has
- * no Base namespace yet (W1). Note that this does NOT block the ERPC top-up --
- * paying an x402 402 with EIP-3009 `transferWithAuthorization` needs a
- * signature and an HTTPS request, not a Base RPC, and the facilitator submits
- * the transaction (the payer needs no ETH).
+ * Base (eip155:8453) is readable since @elsoul/erpc-sdk 0.9.0 (`erpc.base.rpc`).
+ * Paying an x402 402 on Base never needed it -- EIP-3009
+ * `transferWithAuthorization` is a signature plus HTTPS and the facilitator
+ * submits the transaction -- but balances did.
  */
 export const BASE_NETWORK = BASE_MAINNET_CAIP2_NETWORK
+
+/** The chain id each EVM namespace must answer; anything else is a wrong route. */
+export const EXPECTED_CHAIN_IDS: Readonly<Record<string, string>> = {
+  'eip155:1': '0x1',
+  [BASE_MAINNET_CAIP2_NETWORK]: '0x2105',
+  'eip155:43114': '0xa86a',
+}
 
 export class ErpcApiKeyMissingError extends Error {
   constructor() {
@@ -127,6 +161,10 @@ export async function probeReachability(erpc: ErpcClient): Promise<Reachability[
       run: async () => `chainId ${String(await erpc.ethereum.rpc.eth_chainId().send())}`,
     },
     {
+      network: BASE_MAINNET_CAIP2_NETWORK,
+      run: async () => `chainId ${String(await erpc.base.rpc.eth_chainId().send())}`,
+    },
+    {
       network: 'eip155:43114',
       run: async () => `chainId ${String(await erpc.avalanche.rpc.eth_chainId().send())}`,
     },
@@ -135,7 +173,14 @@ export async function probeReachability(erpc: ErpcClient): Promise<Reachability[
   return await Promise.all(
     probes.map(async ({ network, run }) => {
       try {
-        return { network, ok: true, detail: await run() }
+        const detail = await run()
+        // An endpoint that answers with the WRONG chain is not reachable in
+        // any sense that matters: balances read there belong to another chain.
+        const expected = EXPECTED_CHAIN_IDS[network]
+        if (expected && detail !== `chainId ${expected}`) {
+          return { network, ok: false, detail: `${detail} (expected ${expected})` }
+        }
+        return { network, ok: true, detail }
       } catch (error) {
         return {
           network,

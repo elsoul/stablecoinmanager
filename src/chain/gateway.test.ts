@@ -32,14 +32,22 @@ afterEach(() => {
 
 const RESULTS: Record<string, unknown> = {
   getSlot: 424242,
-  eth_chainId: '0x1',
-  // 🔴 The methods `holdings` actually calls. The probe above uses getSlot and
-  // eth_chainId, so without these the detector covered the reachability check
-  // and not the tool that reads money. Same transport, but "same transport" is
-  // an inference and this file exists because an inference about this
-  // transport was wrong in production.
+  // 🔴 The methods `holdings` actually calls: getBalance (Solana), and on each
+  // EVM chain eth_chainId, eth_getBalance and eth_call (`balanceOf`). The probe
+  // above uses getSlot and eth_chainId, so without these the detector covered
+  // the reachability check and not the tool that reads money. Same transport,
+  // but "same transport" is an inference and this file exists because an
+  // inference about this transport was wrong in production.
   getBalance: { context: { slot: 1 }, value: 1234567890 },
   eth_getBalance: '0x1bc16d674ec80000',
+  eth_call: '0x' + '0'.repeat(64),
+}
+
+/** Each EVM namespace answers its own chain id, as the real endpoints do. */
+function chainIdFor(url: string): string {
+  if (new URL(url).hostname === 'base.erpc.global') return '0x2105'
+  if (new URL(url).pathname.startsWith('/ava')) return '0xa86a'
+  return '0x1'
 }
 
 function installWorkerdFaithfulFetch(): string[] {
@@ -57,8 +65,9 @@ function installWorkerdFaithfulFetch(): string[] {
     const url = String(input instanceof Request ? input.url : input)
     calls.push(url)
     const body = JSON.parse(String(init?.body)) as { id: unknown; method: string }
+    const result = body.method === 'eth_chainId' ? chainIdFor(url) : RESULTS[body.method]
     return new Response(
-      JSON.stringify({ jsonrpc: '2.0', id: body.id, result: RESULTS[body.method] }),
+      JSON.stringify({ jsonrpc: '2.0', id: body.id, result }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     )
   } as typeof fetch
@@ -77,18 +86,21 @@ test('every namespace is reachable under workerd fetch rules', async () => {
     [
       { network: 'solana-mainnet', ok: true, detail: 'slot 424242' },
       { network: 'eip155:1', ok: true, detail: 'chainId 0x1' },
-      { network: 'eip155:43114', ok: true, detail: 'chainId 0x1' },
+      { network: 'eip155:8453', ok: true, detail: 'chainId 0x2105' },
+      { network: 'eip155:43114', ok: true, detail: 'chainId 0xa86a' },
     ],
   )
   // Positive control: the requests really went through the stub, to the
-  // endpoints the SDK resolves by default.
-  assert.equal(calls.length, 3)
+  // endpoints the SDK resolves by default -- Base to DEFAULT_BASE_ENDPOINT.
+  assert.equal(calls.length, 4)
+  assert.ok(calls.some((url) => new URL(url).hostname === 'base.erpc.global'))
   assert.ok(calls.every((url) => url.startsWith('https://')))
 })
 
 test('the balance reads holdings makes go through the same workerd rules', () => {
   // Not a rerun of the probe: `probeReachability` calls getSlot and
-  // eth_chainId, `holdings` calls getBalance and eth_getBalance. If a future
+  // eth_chainId, `holdings` calls getBalance, eth_getBalance and eth_call
+  // (six of its nine EVM reads are `balanceOf` calls). If a future
   // SDK binds fetch correctly on one path and not the other, the probe test
   // alone would stay green while wallet balances read as unreachable -- which
   // is the exact shape of the defect this file was created for, one method
@@ -103,10 +115,41 @@ test('the balance reads holdings makes go through the same workerd rules', () =>
     erpc.solana.rpc.getBalance('11111111111111111111111111111111').send(),
     erpc.ethereum.rpc.eth_getBalance('0x0000000000000000000000000000000000000000', 'latest').send(),
     erpc.avalanche.rpc.eth_getBalance('0x0000000000000000000000000000000000000000', 'latest').send(),
+    erpc.base.rpc.eth_getBalance('0x0000000000000000000000000000000000000000', 'latest').send(),
+    erpc.base.rpc.eth_call(
+      { to: '0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42', data: `0x70a08231${'0'.repeat(64)}` },
+      'latest',
+    ).send(),
   ]).then((results) => {
-    assert.equal(results.length, 3)
-    // Positive control: the requests really went out, one per namespace.
-    assert.equal(calls.length, 3, `expected three requests, got ${JSON.stringify(calls)}`)
+    assert.equal(results.length, 5)
+    // Positive control: the requests really went out, one per namespace plus
+    // the `balanceOf` call on Base.
+    assert.equal(calls.length, 5, `expected five requests, got ${JSON.stringify(calls)}`)
     assert.ok(calls.every((url) => url.startsWith('https://')))
   })
+})
+
+test('an EVM namespace that answers the wrong chain id is reported ok:false', async () => {
+  const realFetchLocal = globalThis.fetch
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body)) as { id: unknown; method: string }
+    const url = String(input instanceof Request ? input.url : input)
+    // Base endpoint misrouted to Ethereum mainnet.
+    const result = body.method === 'eth_chainId'
+      ? (new URL(url).hostname === 'base.erpc.global' ? '0x1' : chainIdFor(url))
+      : RESULTS[body.method]
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: body.id, result }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })
+  }) as typeof fetch
+  try {
+    const reachability = await probeReachability(
+      createGateway({ ERPC_API_KEY: 'test-key-0000000000' } as Env),
+    )
+    const base = reachability.find((r) => r.network === 'eip155:8453')
+    assert.deepEqual(base, { network: 'eip155:8453', ok: false, detail: 'chainId 0x1 (expected 0x2105)' })
+  } finally {
+    globalThis.fetch = realFetchLocal
+  }
 })

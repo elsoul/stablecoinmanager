@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@elsoul/erpc-sdk':
-        specifier: 0.8.1
-        version: 0.8.1
+        specifier: 0.9.0
+        version: 0.9.0
       '@noble/curves':
         specifier: 1.9.7
         version: 1.9.7
@@ -113,8 +113,8 @@ packages:
     resolution: {integrity: sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==}
     engines: {node: '>=12'}
 
-  '@elsoul/erpc-sdk@0.8.1':
-    resolution: {integrity: sha512-KIB08UZ6Ve6ztzh5zg8bf9nr+p78vWymo4pR5VYTp/lfVCOvjfcElnIIJvACviMjwO5qEZI8DJSAfohdi6QHXg==}
+  '@elsoul/erpc-sdk@0.9.0':
+    resolution: {integrity: sha512-JMC2yhxPAb5i1n+WlhIRjoBsu/ofRX6/LfdUfzteLTDB5HI5qR3Sirx/bUusg69J/OGluOvmxMf/zZp7PCySqA==}
     engines: {node: '>=20'}
 
   '@emnapi/runtime@1.11.3':
@@ -857,7 +857,10 @@ snapshots:
     dependencies:
       '@jridgewell/trace-mapping': 0.3.9
 
-  '@elsoul/erpc-sdk@0.8.1': {}
+  '@elsoul/erpc-sdk@0.9.0':
+    dependencies:
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
 
   '@emnapi/runtime@1.11.3':
     dependencies:
