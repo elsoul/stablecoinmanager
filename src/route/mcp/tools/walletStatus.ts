@@ -23,7 +23,7 @@ export async function walletStatus(env: Env): Promise<ToolResult> {
       return fail(
         { state: 'not_initialized', policy },
         [
-          'Run `pnpm -F mcp-stablecoin-manager wallet:init` to generate a wallet and store it as the WALLET_MNEMONIC secret.',
+          'Run `pnpm wallet:init` to generate a wallet and store it as the WALLET_MNEMONIC secret.',
           'Until then every money tool refuses.',
         ],
         ['No wallet is configured on this deployment.'],

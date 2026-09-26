@@ -1,6 +1,4 @@
-// Copied unchanged from `api/mcp/master-api/src/utils/` -- generic OAuth/KV
-// primitives with no Discord or master-api specifics. Kept identical so the
-// two MCP workers' OAuth surfaces stay auditable against each other.
+// Redis-style get/set/del helpers over a Workers KV namespace.
 import type { KVNamespace } from '@cloudflare/workers-types'
 
 /**

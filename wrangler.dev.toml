@@ -1,14 +1,16 @@
 #:schema node_modules/wrangler/config-schema.json
 #
-# Local development. Every value here is a dummy: `assertProductionConfig`
-# refuses to deploy a wrangler.toml that looks like this one.
+# Local development only (`pnpm dev`). Every value here is a stand-in, and the
+# deploy check refuses a config that looks like this one.
 #
-# The dev callback host is dev-mcp-stablecoin-manager.erpc.global -- a
-# subdomain we own, mapped to 127.0.0.1 via /etc/hosts, served by
-#   pnpm -F mcp-stablecoin-manager dev --local-protocol https --port 8787
-# Raw localhost/127.0.0.1 is deliberately NOT a registered redirect_uri on
-# auth-api, so an authorization code can never land on a host we do not own.
-name = "mcp-stablecoin-manager-dev"
+# /health and the OAuth metadata work as they are. Signing in against the
+# local worker also needs a callback on a host you own: map a subdomain of
+# your domain to 127.0.0.1 in /etc/hosts, put it in the two URLs below, serve
+# with `pnpm dev --local-protocol https --port 8787`, and set
+# APP_OIDC_CLIENT_ID to a broker client registered for
+# https://<that host>:8787/oauth/callback. Raw localhost is deliberately not
+# used, so an authorization code can never land on a host you do not own.
+name = "stablecoin-manager-dev"
 main = "./src/index.ts"
 compatibility_date = "2026-05-12"
 workers_dev = true
@@ -16,10 +18,11 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 NODE_ENV = "development"
-MCP_SERVER_BASE_URL = "https://dev-mcp-stablecoin-manager.erpc.global:8787"
-OAUTH_ISSUER = "https://dev-mcp-stablecoin-manager.erpc.global:8787"
-AUTH_API_BASE_URL = "https://auth-api.erpc.global"
-AUTH_API_CLIENT_ID = "mcp-stablecoin-manager"
+AUTH_PROVIDER = "app-oidc"
+MCP_SERVER_BASE_URL = "https://dev.wallet.example.com:8787"
+OAUTH_ISSUER = "https://dev.wallet.example.com:8787"
+APP_OIDC_ISSUER = "https://app-oidc-api.s-kishi.workers.dev"
+APP_OIDC_CLIENT_ID = "app_REPLACE_WITH_DEV_CLIENT_ID"
 ALLOWED_GOOGLE_EMAILS = "owner@example.com"
 JWT_EXPIRES_IN = "3600"
 X402_HOST = "https://x402.erpc.global"

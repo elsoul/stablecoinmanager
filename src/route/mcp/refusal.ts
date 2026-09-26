@@ -15,8 +15,8 @@
  * Each fix moved the decision one step further out and left the last step at
  * the call site, where node cannot reach it -- `x402Pay` imports
  * `cloudflare:workers` through `policyFor`, so the only guard there is a text
- * pin, and a text pin loses to the next spelling. Three spellings so far, all
- * of them found by a reviewer rather than by the guard.
+ * pin, and a text pin loses to the next spelling. Three spellings so far, and
+ * the guard itself caught none of them.
  *
  * So the whole ToolResult is built here. The branch has one expression to
  * return and nothing left to slice, filter or replace.

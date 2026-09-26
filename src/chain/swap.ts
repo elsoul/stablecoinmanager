@@ -10,9 +10,9 @@
  * measured rather than assumed (@elsoul/erpc-sdk 0.8.0, 2026-09-22):
  *
  *   1. `transaction.value` is the literal `'0'` and the path entries are
- *      `standard: 'erc20'`. The INPUT cannot be a native asset. The plan's
- *      stated canary, "0.001 ETH -> USDC", is not executable as written; it
- *      has to be WETH -> USDC, and there is no wrap step in the SDK.
+ *      `standard: 'erc20'`. The INPUT cannot be a native asset: a swap
+ *      cannot start from native ETH, so "0.001 ETH -> USDC" is impossible
+ *      while "0.001 WETH -> USDC" works, and there is no wrap step in the SDK.
  *   2. `allowance` is returned as a REQUIREMENT, not as something the SDK
  *      performs. Approving is ours to do, and it is a second signature.
  *

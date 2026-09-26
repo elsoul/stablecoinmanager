@@ -15,9 +15,9 @@ import {
 // fence, EURC-only for top-ups, the ledger row -- is computed from the
 // requirement `selectRequirement` picked. `new x402Client()` with no argument
 // installs the SDK default selector, `(version, accepts) => accepts[0]`. So a
-// resource could list a large payment to an attacker FIRST and the reviewed
-// one second: every policy check passes on the second, the ledger records the
-// second, and the signature is for the first.
+// resource could list a large payment to an attacker FIRST and the
+// policy-checked one second: every policy check passes on the second, the
+// ledger records the second, and the signature is for the first.
 //
 // It was reproduced by execution, so it is guarded by execution. A source
 // test asserting "we pass a selector" would go green against a selector that
@@ -91,7 +91,7 @@ const CHOSEN: SignTarget = {
 test('the signature is for the requirement we chose, not the first one offered', async () => {
   const signed = await signPayment(account, divergentChallenge(), CHOSEN)
 
-  // The whole finding in two assertions.
+  // The whole defect in two assertions.
   assert.equal(signed.to?.toLowerCase(), TREASURY, 'signed payee is the treasury')
   assert.equal(signed.value, '10000', 'signed amount is the chosen amount')
 

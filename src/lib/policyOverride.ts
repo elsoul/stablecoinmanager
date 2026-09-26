@@ -18,8 +18,8 @@
  * which is a different set of credentials and leaves a diff.
  *
  * This also settles the direction that was reported inert: a narrowing
- * override that does not apply is a limit believed to be smaller than it is
- *. Narrowing is exactly what applies.
+ * override that does not apply is a limit believed to be smaller than it is.
+ * Narrowing is exactly what applies.
  */
 import type { EffectivePolicyValue, Policy } from './policy'
 

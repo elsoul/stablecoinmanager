@@ -47,7 +47,7 @@ export const REDACTED = '[redacted]'
  * says so too, by trimming before deciding whether a secret is set. Taking it
  * as a needle would replace every run of spaces in ordinary output with
  * `[redacted]`: not a leak, but the same "two predicates for one question"
- * shape that cost a round earlier in this file.
+ * shape that has already been a defect once in this file.
  */
 const MIN_LITERAL_LENGTH = 8
 function isStrippableLiteral(value: unknown): value is string {
@@ -114,8 +114,9 @@ export interface SecretBearingEnv {
  * Both the stored value AND its trimmed form: a secret stored with surrounding
  * whitespace still travels through an upstream error message WITHOUT that
  * whitespace, so stripping only the stored form leaves the value itself
- * readable. Agreeing on one predicate is not the same as covering the value --
- * that distinction cost a round.
+ * readable. Agreeing on one predicate is not the same as covering the value;
+ * an earlier version missed that distinction and left a padded secret
+ * readable.
  */
 export function heldSecrets(env: SecretBearingEnv): string[] {
   const forms = new Set<string>()

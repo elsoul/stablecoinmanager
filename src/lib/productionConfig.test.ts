@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { assertDeployableProductionConfig } from './productionConfig.ts'
+import { assertDeployableProductionConfig, unrenderedPlaceholders } from './productionConfig.ts'
+import { renderTemplateFixture } from './templateFixture.ts'
 
 // import.meta.dirname rather than new URL(...): @cloudflare/workers-types
 // replaces the global URL with the Workers one, which node:fs and node:url
@@ -10,15 +11,51 @@ import { assertDeployableProductionConfig } from './productionConfig.ts'
 const PROD = join(import.meta.dirname, '../../wrangler.toml')
 const DEV = join(import.meta.dirname, '../../wrangler.dev.toml')
 
-const prod = () => readFileSync(PROD, 'utf8')
+const prod = () => renderTemplateFixture(readFileSync(PROD, 'utf8'))
 
 test('the checked-in dev config is REFUSED (the checker is not a no-op)', () => {
   // The positive control: if this ever passes, every assertion below is empty.
   assert.throws(() => assertDeployableProductionConfig(readFileSync(DEV, 'utf8')))
 })
 
-test('the checked-in production config is deployable as it stands', () => {
+test('the checked-in production config is deployable once its placeholders are filled', () => {
   assertDeployableProductionConfig(prod())
+})
+
+test('the checked-in template is REFUSED while its placeholders are unrendered', (t) => {
+  // The same file as above, minus the fixture: `pnpm deploy:prod` straight
+  // from a clone must stop here, not ship a worker named "{{app.name}}".
+  // In an app that `erpc app init` generated there is nothing left to render.
+  const raw = readFileSync(PROD, 'utf8')
+  if (unrenderedPlaceholders(raw).length === 0) return t.skip('rendered app')
+  assert.throws(() => assertDeployableProductionConfig(raw), /unrendered placeholders/)
+})
+
+test('one unrendered placeholder is enough to refuse', () => {
+  for (
+    const [label, config] of [
+      ['name', prod().replace(/^name = "[^"]*"/m, 'name = "{{app.name}}"')],
+      [
+        'allowlist',
+        prod().replace(
+          /^ALLOWED_GOOGLE_EMAILS = "[^"]*"/m,
+          'ALLOWED_GOOGLE_EMAILS = "{{ALLOWED_GOOGLE_EMAILS}}"',
+        ),
+      ],
+    ]
+  ) {
+    assert.notEqual(config, prod(), `${label}: the replacement must apply`)
+    assert.throws(() => assertDeployableProductionConfig(config), /unrendered placeholders/, label)
+  }
+})
+
+test('the deploy-time KV sentinel alone is not an unrendered placeholder', () => {
+  // `erpc deploy` fills {{erpc:kv-id:MCP_KV}} after `erpc app init`, and
+  // `erpc deploy --dry-run` runs this check as its preflight before that. A
+  // refusal here would make every dry run of a fresh app fail.
+  const config = prod().replace(/(binding = "MCP_KV"\nid = ")[^"]*/, '$1{{erpc:kv-id:MCP_KV}}')
+  assert.notEqual(config, prod())
+  assertDeployableProductionConfig(config)
 })
 
 test('a config whose KV namespace was never created is refused', () => {
@@ -61,10 +98,7 @@ test('losing the custom domain is refused', () => {
   assert.throws(
     () =>
       assertDeployableProductionConfig(
-        provisioned().replace(
-          'pattern = "mcp-stablecoin-manager.erpc.global"',
-          'pattern = "somewhere-else.example.com"',
-        ),
+        provisioned().replace(/^pattern = "[^"]*"/m, 'pattern = "somewhere-else.example.com"'),
       ),
     /custom domain/,
   )
@@ -74,10 +108,7 @@ test('an empty login allowlist is refused', () => {
   assert.throws(
     () =>
       assertDeployableProductionConfig(
-        provisioned().replace(
-          'ALLOWED_GOOGLE_EMAILS = "owner@example.com"',
-          'ALLOWED_GOOGLE_EMAILS = ""',
-        ),
+        provisioned().replace(/^ALLOWED_GOOGLE_EMAILS = "[^"]*"/m, 'ALLOWED_GOOGLE_EMAILS = ""'),
       ),
     /ALLOWED_GOOGLE_EMAILS is empty/,
   )

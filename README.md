@@ -19,9 +19,9 @@ request that goes over one is refused.
 
 - **x402 payments with no gas token needed.** The worker signs an EIP-3009
   `transferWithAuthorization` and the x402 facilitator submits it, so the
-  wallet needs no ETH. Observed on Base Sepolia by the reference client in
-  `api/erpc/x402-rpc-api/.e2e-local/README.md`; not yet exercised by this
-  worker on mainnet (see "Nothing in this worker has moved real money yet").
+  wallet needs no ETH. The same flow has been observed on Base Sepolia with a
+  reference x402 client; this worker has not yet exercised it on mainnet (see
+  "Nothing in this worker has moved real money yet").
 - **Limits the agent cannot raise.** Per-payment and daily limits come from
   the deploy config. At runtime the agent can only *lower* them. Raising a
   limit means a redeploy.
@@ -139,12 +139,34 @@ The order is the design (`src/route/mcp/tools/x402Pay.ts`):
 
 ## Quickstart
 
+You need a Cloudflare account with a zone for the domain the worker will
+answer on, Node.js 24 with pnpm 10, and an `erpc` CLI release that satisfies
+`minCliVersion` in `erpc-template.json`.
+
 ```bash
+# 1. Generate your app from this template. It asks for the custom domain and
+#    the Google account(s) allowed to sign in, and registers the app with the
+#    login broker for https://<your-domain>/oauth/callback.
+erpc app init my-wallet --template stablecoin-manager@<tag>
+cd my-wallet
+
+# 2. Deploy it to your Cloudflare account: KV namespace, secrets, the wallet,
+#    the deploy check, `wrangler deploy`, then a health and login probe.
+erpc deploy --target cloudflare
+
+# 3. Connect an MCP client.
 claude mcp add --transport http scm https://<your-domain>/mcp
 ```
 
 Log in with Google. An account outside `ALLOWED_GOOGLE_EMAILS` gets a 403,
 and no authorization code is minted.
+
+🔴 **Take the offline backup of the recovery phrase before funding the
+wallet** (see [Deploying](#deploying)). The CLI never shows the phrase.
+
+The CLI verifies the checksum of the template release it downloads, and
+nothing more: this template's install, deploy-check and wallet-generation
+scripts run with your own permissions, unsandboxed. Use a tag you trust.
 
 Then, from the agent:
 
@@ -199,14 +221,14 @@ The worker signs only x402 requirements on EVM networks (`eip155:*`) using the
 ## What has and has not been exercised
 
 **Nothing in this worker has moved real money yet.** The payment path is
-verified by tests that run the x402 SDK, not by a live settlement. A
-production canary (a small real top-up) has not been run. The worker itself
-cannot read Base balances yet (see "Chain access" below), so a funded
-wallet's balance can only be confirmed from outside the worker. What is
-still missing is an explicit go-ahead for an irreversible on-chain payment,
-not funds. Until it runs, every claim here about paying is a claim about code,
-not about an outcome. `swap` and `bridge` stop before signing for the same
-reason.
+verified by tests that run the x402 SDK, not by a live settlement, and no
+small real top-up has been run in production. The worker itself cannot read
+Base balances yet (see "Chain access" below), so a funded wallet's balance can
+only be confirmed from outside the worker. Before trusting your own deploy
+with real funds, make one small payment with it (a minimal `erpc_topup`, for
+example) and check the result on-chain. Until that has happened, every claim
+here about paying is a claim about code, not about an outcome. `swap` and
+`bridge` stop before signing for the same reason.
 
 ---
 
@@ -240,39 +262,130 @@ poll cannot reopen a completed payment.
 ## Login and who can call it
 
 ```
-MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ auth-api (?provider=google) ──▶ Google
+MCP client ──OAuth 2.1 (DCR + PKCE)──▶  this worker  ──▶ login broker (OIDC) ──▶ Google
                                               │
-                                    allowlist: provider === 'google'
-                                            && isEmailVerified === true
+                                    allowlist: email_verified === true
                                             && email ∈ ALLOWED_GOOGLE_EMAILS
 ```
 
 - **The worker is its own Authorization Server.** It mints tokens with `aud`
   pinned to its own base URL, so a token from another MCP server cannot be
-  replayed here. auth-api answers only "which Google account is this?". Its
-  response is read once over the back channel the worker opened itself, and
-  never stored or forwarded. This worker never accepts an auth-api token from
-  a caller.
+  replayed here. The identity provider answers only "which Google account is
+  this?". Its answer is read once over the back channel the worker opened
+  itself, and never stored or forwarded. This worker never accepts an
+  identity-provider token from a caller.
 - **The allowlist is re-checked on every `/mcp/*` call** (`src/index.ts`), so
   removing an address stops an already-issued token immediately.
 - **Two producers of an accepted token, both in `route/oauth/token.ts`:**
   1. the authorization-code grant. `route/oauth/callback.ts` writes a code
      only after state verifies under this worker's `OAUTH_STATE_SECRET`, the
-     upstream verifier comes from inside that signed state, the client and
-     `redirect_uri` are registered, and the allowlist passes.
+     client and `redirect_uri` are registered, and the allowlist passes.
   2. the refresh grant. Refresh tokens are single-use, rotated, and bound to
      the client they were issued to.
 - **Registration is allowlisted** to the hosted Claude and ChatGPT callbacks
   and RFC 8252 loopback.
 
-Why this shape: an auth-api access token on its own proves only that someone
-completed a Google login somewhere. It is not a capability for
-this wallet, so the worker never treats it as one.
+Why this shape: an identity-provider token on its own proves only that
+someone completed a Google login somewhere. It is not a capability for this
+wallet, so the worker never treats it as one.
 
 What is *not* claimed: immunity to a compromise of `OAUTH_STATE_SECRET` or
 `JWT_SECRET`, or protection against an allowlisted owner's own compromised
 browser. The email allowlist does not help there, because that victim is a
 legitimate allowlisted user.
+
+### `AUTH_PROVIDER`: app-oidc (this template) vs erpc-auth-api
+
+| `AUTH_PROVIDER` | identity provider | required vars |
+|---|---|---|
+| `app-oidc` (set in this template's `wrangler.toml`) | the app-oidc-api login broker | `APP_OIDC_ISSUER`, `APP_OIDC_CLIENT_ID` |
+| unset or `erpc-auth-api` | ERPC's own auth-api (`?provider=google`) | `AUTH_API_BASE_URL`, `AUTH_API_CLIENT_ID` |
+
+A deploy made from this template signs in through the broker: `erpc app init`
+registers the app as an OAuth client there, and the broker hands back a
+Google identity in an OpenID Connect `id_token`. The worker verifies that
+token itself -- signature against the broker's JWKS (ES256 only), issuer,
+audience (exactly this client), nonce, and age -- before the allowlist runs.
+`erpc-auth-api` is the path ERPC's own hosted deployment uses; its deploy
+check only accepts ERPC's own custom domain.
+
+The deploy-time assertion in `src/lib/productionConfig.ts` pins
+`APP_OIDC_ISSUER` byte-for-byte to the broker origin, requires the custom
+domain route to match `MCP_SERVER_BASE_URL`, and requires `OAUTH_ISSUER` to
+equal it. It checks the provider switch in one direction only: an
+`erpc-auth-api` config is refused if `APP_OIDC_ISSUER` or
+`APP_OIDC_CLIENT_ID` is present, on the assumption that it is a switch
+someone started and did not finish. An `app-oidc` config is not required to
+omit `AUTH_API_*`; those vars are simply not read on that path.
+
+**Where the upstream PKCE verifier lives.** On the `app-oidc` path it goes
+into `MCP_KV` under `oidc_txn:<hex(sha256(state))>`, TTL 600 seconds, read and
+deleted (single use) on the matching callback; it never leaves the worker.
+The `erpc-auth-api` path carries it inside the HMAC-signed `state` blob
+instead (see `utils/state.ts`).
+
+**Broker key-rotation upper bound.** If the broker drops a compromised signing
+key, this worker keeps accepting a token signed with it for at most
+JWKS max-age (≤ 300s) + id_token `exp` (300s) + clock leeway (30s) = **630
+seconds** after the broker's own deploy completes. This bound only covers
+*new* logins: an MCP access token or refresh token this worker already issued
+is unaffected by the broker's rotation. It can only be revoked here, by
+rotating `JWT_SECRET` / `REFRESH_TOKEN_SECRET` or by removing the address from
+`ALLOWED_GOOGLE_EMAILS` (re-checked on every `/mcp/*` call).
+
+Two independent things keep an owner's login from becoming someone else's
+capability.
+
+**① Who the code can go to** is decided by the DCR redirect allowlist
+(`route/oauth/client.ts` `isAllowedRedirectUri`). Dynamic registration is
+open by design, so this allowlist carries the whole weight on the
+registration path -- widening it widens who can be handed an authorization
+code for this wallet. Without it, an attacker could register their own
+client, start a login, and if the owner completed that login in their own
+browser, the attacker's client -- not the owner -- would end up holding the
+code and the access token it exchanges for. It is checked at registration
+time and again at every later lookup: `route/oauth/authorize.ts`,
+`route/oauth/callback.ts` and `route/oauth/token.ts` all call
+`getRegisteredClient`, which re-validates every stored `redirect_uri` against
+`isAllowedRedirectUri` on each call.
+
+Three narrower things, together, decide whether the person completing a
+login through an already-registered client is the owner:
+
+(a) *(app-oidc path only)* an attacker who intercepts the upstream
+    authorization `code` cannot redeem it: the PKCE verifier it must be
+    paired with lives only in this worker's `MCP_KV` (`oidc_txn:`), never in
+    a value that leaves the worker. The `erpc-auth-api` path does not have
+    this property -- its upstream verifier travels inside the signed `state`
+    blob.
+(b) on both paths, the MCP authorization code the callback produces is
+    itself bound to the downstream PKCE pair (S256) the MCP client set up,
+    so possessing that code is not enough on its own to redeem it;
+(c) an id_token for an account this worker does not own cannot become an MCP
+    authorization code: the email allowlist (`evaluateLogin`,
+    `ALLOWED_GOOGLE_EMAILS`) runs, and runs before the `auth_code:` write, in
+    `route/oauth/callback.ts`.
+
+(a) is a property of the app-oidc path itself. (b) and (c) hold only while:
+
+① the DCR redirect allowlist is not widened (`route/oauth/client.ts`
+   `isAllowedRedirectUri`);
+② the downstream PKCE (S256) requirement is not removed
+   (`route/oauth/authorize.ts`, `route/oauth/token.ts`) -- protects (b);
+③ the email allowlist decision still runs, and still runs before the
+   `auth_code:` write, in `route/oauth/callback.ts` -- protects (c).
+
+If you widen ① in your own deploy, that guarantee is gone for it, whatever
+else this section says.
+
+**Declared deviation from RFC 9700 §2.1.1.** That section asks for the PKCE
+`code_challenge` / nonce to be bound to both the client and the user agent.
+On the app-oidc path the client-side binding is the upstream verifier this
+worker holds in `MCP_KV` ((a) above); there is no user-agent binding -- no
+cookie ties a login attempt to the browser that started it. ①, ② and ③
+together are what stand in for it. The `erpc-auth-api` path does not have
+even the client-side binding in the RFC's sense, since its upstream verifier
+lives in the signed `state` value rather than in server-side storage.
 
 ---
 
@@ -297,10 +410,10 @@ a wallet whose only copy lives in a Durable Object would be destroyed along
 with a deleted namespace. It is not the only way the phrase can leave: anyone
 who can deploy code to this worker can read the secret.
 
-`src/wallet/slip10.ts` is copied verbatim from `wallet/packages/core` (a
-separate pnpm workspace, so it cannot be imported). `src/wallet/derive.test.ts`
-pins the same golden addresses that implementation pins, plus the two canonical
-public BIP-44 EVM vectors.
+The derivation code lives in `src/wallet/`: `slip10.ts` derives the ed25519
+key for Solana, and viem derives the secp256k1 key for the EVM chains.
+`src/wallet/derive.test.ts` pins Solana golden addresses captured from the
+`ed25519-hd-key` library, plus the two canonical public BIP-44 EVM vectors.
 
 ## Chain access
 
@@ -321,21 +434,31 @@ request, and the facilitator submits the transaction.
 
 ### Deploying
 
-Create the KV namespace once (`wrangler kv namespace create MCP_KV`) and put
-its id in `wrangler.toml`. A deploy pipeline of your choosing can then run
-`wrangler deploy` on every push. What no CI should ever do is set secrets:
+The checked-in `wrangler.toml` is a template. `erpc app init` fills in its
+quoted `{{...}}` placeholders from your answers (and from the broker, for
+`APP_OIDC_CLIENT_ID`); `erpc deploy --target cloudflare` then does the rest,
+in this order: `pnpm install --frozen-lockfile`, a wrangler version check,
+Cloudflare login and account selection, the `MCP_KV` namespace (reused if it
+already exists, and its id written into `wrangler.toml`), the Worker secrets,
+the deploy check (`pnpm run assert:prod-config`), `wrangler deploy`, and
+finally two probes: `GET /health` must answer `{"status":"ok"}`, and
+`/oauth/authorize` must redirect to the broker.
 
-```bash
-# All five runtime secrets are operator-set, once. `wrangler deploy` preserves
-# them, so redeploys do not disturb them.
-pnpm exec wrangler secret put JWT_SECRET
-pnpm exec wrangler secret put REFRESH_TOKEN_SECRET
-pnpm exec wrangler secret put OAUTH_STATE_SECRET
-pnpm exec wrangler secret put ERPC_API_KEY
-pnpm wallet:init     # generates and pipes the mnemonic
-```
+The secrets are created once and never overwritten by a later deploy:
 
-🔴 **Immediately after `wallet:init`, take the offline backup.** Log in over
+| secret | where it comes from |
+|---|---|
+| `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `OAUTH_STATE_SECRET` | 32 random bytes each, generated by the CLI |
+| `WALLET_MNEMONIC` | `scripts/wallet-generate.mjs`, piped straight into `wrangler secret put` |
+| `ERPC_API_KEY` | optional; asked for (or read from the `ERPC_API_KEY` environment variable). Only `erpc_topup` needs it |
+
+`scripts/wallet-generate.mjs` writes the 24-word phrase to stdout and only
+the EVM address to stderr. It never writes the phrase to a file or to argv.
+The CLI never displays it; instead it asks you to confirm that you will take
+the backup below. Re-deploys from CI should use
+`erpc deploy --no-provision --yes`, which never generates a wallet or a secret.
+
+🔴 **Immediately after the first deploy, take the offline backup.** Log in over
 MCP and call `wallet_export_seed`, then store the phrase somewhere that is not
 this deployment. Measured: `wrangler secret` offers `put`, `delete`, `list`
 and `bulk`, and **there is no `get`**, so nothing can read the phrase back out
@@ -343,27 +466,59 @@ of Cloudflare. `wallet_export_seed` is the only read path that exists, and it
 runs inside the worker, whose throttle can refuse. Do this before funding the
 wallet.
 
-`wallet:init` never prints the phrase, never writes it to a file, and never
-puts it in argv. It refuses to run when a `WALLET_MNEMONIC` secret already
-exists, because replacing the phrase of a funded wallet strands the funds.
-Use `--dry-run` to exercise it without credentials.
+The deploy check (`src/lib/productionConfig.ts`, also run by `pnpm
+deploy:prod`) refuses to ship a config with unrendered template placeholders,
+a placeholder KV id, a missing Durable Object binding or migration tag, a
+custom domain that does not match `MCP_SERVER_BASE_URL`, an `OAUTH_ISSUER`
+that differs from it, an `APP_OIDC_ISSUER` other than the broker, an empty
+login allowlist, `workers_dev = true`, a development secret, or a mnemonic or
+API key written into the config.
 
-`deploy:prod` runs the production-config assertion itself, so the guard does
-not depend on `enable-pre-post-scripts` staying at its default. The assertion
-refuses to ship a config with a placeholder KV id, a missing Durable Object
-binding or migration tag, a missing custom domain, an empty login allowlist,
-`workers_dev = true`, a development secret, or a mnemonic or API key written
-into the config.
+The `{{erpc:...}}` values that `erpc deploy` fills in itself, such as the KV
+namespace id, do not count as unrendered placeholders: `erpc deploy --dry-run`
+runs the deploy check before it has filled them, and a real `erpc deploy`
+refuses to continue while one is still present.
+
+#### Without the erpc CLI
+
+Everything above can be done by hand from a clone:
+
+1. Replace every quoted `{{...}}` in `wrangler.toml`: the worker name, your
+   domain (the route, and `https://<domain>` for `MCP_SERVER_BASE_URL` and
+   `OAUTH_ISSUER`), the allowlisted Google address(es), the broker origin in
+   `erpc-template.json` for `APP_OIDC_ISSUER`, the client id the broker issued
+   for `https://<domain>/oauth/callback` for `APP_OIDC_CLIENT_ID`, and the id
+   printed by `pnpm exec wrangler kv namespace create MCP_KV`.
+2. Set the secrets once. `wrangler deploy` preserves them, so no CI should
+   ever set them:
+
+   ```bash
+   pnpm exec wrangler secret put JWT_SECRET
+   pnpm exec wrangler secret put REFRESH_TOKEN_SECRET
+   pnpm exec wrangler secret put OAUTH_STATE_SECRET
+   pnpm exec wrangler secret put ERPC_API_KEY   # optional
+   pnpm wallet:init     # generates and pipes the mnemonic
+   ```
+
+   `wallet:init` never prints the phrase, never writes it to a file, and
+   never puts it in argv. It refuses to run when a `WALLET_MNEMONIC` secret
+   already exists, because replacing the phrase of a funded wallet strands
+   the funds. Use `--dry-run` to exercise it without credentials.
+3. `pnpm deploy:prod`. It runs the deploy check itself before
+   `wrangler deploy`, so the guard does not depend on
+   `enable-pre-post-scripts` staying at its default.
 
 Until the OAuth secrets are set, `/oauth/*` answers **503** and names what is
 missing, and `/health` reports `config: "incomplete"` with the list. A worker
 that booted and signed tokens with `undefined` would be worse than one that
 refuses.
 
-`wrangler.toml` is **hand-managed** rather than generated by a config tool: a
-generic generator is unlikely to have a schema for `durable_objects` /
-`new_sqlite_classes`, and regenerating it would drop the `v1` migration tag
-and orphan the ledger.
+`wrangler.toml` is **hand-written**. `erpc app init` only substitutes its
+quoted placeholders, and `erpc deploy` only writes the KV namespace id and the
+account id into it; neither regenerates the file. Keep it that way: a generic
+config generator is unlikely to have a schema for `durable_objects` /
+`new_sqlite_classes`, and regenerating the file would drop the `v1` migration
+tag and orphan the ledger.
 
 ### Rolling back a bad deploy
 
@@ -439,17 +594,28 @@ funded, and not left until it is needed.
 ### Local development
 
 ```bash
-pnpm dev
+pnpm dev     # wrangler dev --local with wrangler.dev.toml, on port 8787
 pnpm check   # tsc, source and tests
 pnpm test
 ```
 
-`wrangler.dev.toml` uses `https://dev-<your-domain>:8787` as the dev callback,
-a subdomain you own, mapped to `127.0.0.1` in `/etc/hosts` and served with
-`--local-protocol https --port 8787`. Raw `localhost` / `127.0.0.1` is
-deliberately **not** a registered redirect_uri with your OAuth identity
-provider. That pin keeps an authorization code from being delivered to a host
-you do not own.
+`wrangler.dev.toml` runs the worker locally with dummy secrets and a local
+KV namespace and Durable Object. `/health` and the OAuth metadata answer as
+they are; `/health` reports `config: "incomplete"` because no wallet or ERPC
+API key is set, and the deploy check refuses this file by design.
+
+Signing in against the local worker takes three more things, because the
+login is a real OAuth flow through the broker:
+
+1. a subdomain you own, mapped to `127.0.0.1` in `/etc/hosts`, in place of
+   `dev.wallet.example.com` in `MCP_SERVER_BASE_URL` and `OAUTH_ISSUER`;
+2. serving it over https: `pnpm dev --local-protocol https --port 8787`;
+3. a broker client registered for `https://<that host>:8787/oauth/callback`,
+   in `APP_OIDC_CLIENT_ID`. The client `erpc app init` registered for your
+   deploy accepts only `https://<your-domain>/oauth/callback`.
+
+Raw `localhost` / `127.0.0.1` is deliberately **not** used as a callback: that
+keeps an authorization code from being delivered to a host you do not own.
 
 ---
 
@@ -459,4 +625,4 @@ you do not own.
 - AI の使いすぎは prompt ではなくコードの上限で止める: 1 回・1 日・slippage・deadline の上限を超えた要求は拒否し、減額して払うことはしない。
 - `policy_set` は上限を**下げることしかできない**。上げるには再デプロイが要る。network・asset・支払先は実行時に変更できない。
 - 値が読めない・数値でないときは常に拒否側に倒れる（fail-closed）。`idempotencyKey` で二重払いを防ぎ、署名するのは検査を通った要求だけ。
-- 実弾の canary（本番少額決済）は未実施。wallet（worker の EVM アドレス）には 2026-09-24 に 1.5 EURC が入金済みで、待っているのは不可逆な支払いへの明示的な go-ahead。ここに書いた支払いの主張はコードとテストについてのもので、本番での結果ではない。
+- 実際の送金はまだ行っていない。支払いに関する記述はコードとテストについてのもので、本番での結果ではない。実資金を入れる前に、自分のデプロイで少額の支払いを 1 回試すこと。

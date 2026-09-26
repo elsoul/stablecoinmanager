@@ -9,11 +9,11 @@
  * it hands back on the TLS back-channel.
  *
  * We deliberately do NOT hold auth-api's customer JWT secret, so we cannot and
- * do not verify that token's signature. The trust argument is the same one
- * api/mcp/master-api makes about Discord's token response: the value is not a
- * bearer credential we accepted from a caller, it is a response body we
- * received over TLS from the issuer we just POSTed to. It is read once, used
- * for the allowlist decision, and never stored or forwarded.
+ * do not verify that token's signature. The trust argument is the usual one
+ * for a token endpoint's response: the value is not a bearer credential we
+ * accepted from a caller, it is a response body we received over TLS from the
+ * issuer we just POSTed to. It is read once, used for the allowlist decision,
+ * and never stored or forwarded.
  */
 import type { AuthApiClaims } from '@/types/oauth'
 import { decodeJwtPayload } from './allowlist'

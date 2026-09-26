@@ -130,19 +130,19 @@ declare const EFFECTIVE: unique symbol
  * Both spellings actually found in the wild are in that set. The grep stays
  * as a backstop, demoted to what it is.
  *
- * 🔴 It is NOT total, and the limit belongs here rather than in a reviewer's
- * head. `applyOverrides(loadPolicy(env), {})` mints a legitimate brand from a
- * ceiling using no cast and no banned identifier, and only the backstop grep
- * stops it. An unqualified completeness claim would be
- * the same defect as the curation docblock that declared a rule the
- * implementation did not have. `Readonly` additionally closes mutating a
- * well-obtained effective policy in place -- including
+ * 🔴 It is NOT total, and the limit is written down here rather than left
+ * implicit. `applyOverrides(loadPolicy(env), {})` mints a legitimate brand
+ * from a ceiling using no cast and no banned identifier, and only the backstop
+ * grep stops it. An unqualified completeness claim would be the same defect as
+ * the curation docblock that declared a rule the implementation did not have.
+ * `Readonly` additionally closes mutating a well-obtained effective policy in
+ * place -- including
  * `allowedNetworks.push(...)` and `allowedAssets.push(...)`, which `Readonly`
  * alone left open because it does not reach into array fields, and which are
  * exactly the two ceilings `policy_set` refuses to override on the grounds
- * that they are "to whom and in what" rather than "how much"
- *. Spreading an effective policy into a wider copy
- * stays reachable, and that is a deliberate act rather than a misspelling.
+ * that they are "to whom and in what" rather than "how much". Spreading an
+ * effective policy into a wider copy stays reachable, and that is a
+ * deliberate act rather than a misspelling.
  *
  * This is the same move `lib/settle.ts` made for the settle decision, for the
  * same stated reason: pinning text is a losing game.

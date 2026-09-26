@@ -1,6 +1,4 @@
-// Copied unchanged from `api/mcp/master-api/src/utils/` -- generic OAuth/KV
-// primitives with no Discord or master-api specifics. Kept identical so the
-// two MCP workers' OAuth surfaces stay auditable against each other.
+// PKCE (RFC 7636, S256): code verifier and challenge generation and checking.
 function toBase64Url(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''

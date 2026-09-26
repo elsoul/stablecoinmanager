@@ -1,10 +1,6 @@
 /**
- * COPIED VERBATIM from `wallet/packages/core/src/keyring/slip10.ts`
- * (only this header added). `wallet/` is a separate pnpm workspace, so it
- * cannot be imported from here -- the plan's decision is to copy, not to
- * re-derive. Keeping it byte-identical is what makes it auditable against the
- * original, and `derive.test.ts` pins the same golden addresses the original's
- * `solana.test.ts` pins.
+ * SLIP-0010 ed25519 derivation for the Solana key. `derive.test.ts` pins
+ * golden addresses, so any change here that alters a derived address reddens.
  */
 /**
  * SLIP-0010 ed25519 hierarchical key derivation, backed by `@noble/hashes`.

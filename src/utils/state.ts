@@ -1,12 +1,10 @@
-// Adapted from `api/mcp/master-api/src/utils/state.ts` -- generic signed-state
-// handling with no Discord or master-api specifics. Two deliberate
-// differences from the original, and no others:
+// HMAC-signed OAuth `state` for the login round trip. Two things here are
+// deliberate:
 //   1. `StateData.upstreamVerifier` (see below).
-//   2. `verify()` compares in constant time. The original returns `a === b`;
-//      this worker's token.ts already writes a timingSafeEqual for client
+//   2. `verify()` compares in constant time rather than with `a === b`:
+//      this worker's token.ts already uses a timingSafeEqual for client
 //      secrets, and two different answers to the same question in one worker
 //      is how the wrong one survives a refactor.
-// Anything else that differs from the original is a bug in this file.
 function toBase64Url(data: Uint8Array | ArrayBuffer): string {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
   let binary = ''

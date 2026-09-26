@@ -25,7 +25,7 @@ export const EVM_PATH = "m/44'/60'/0'/0/0"
 
 export class WalletNotInitializedError extends Error {
   constructor() {
-    super('WALLET_MNEMONIC is not set; run `pnpm -F mcp-stablecoin-manager wallet:init`')
+    super('WALLET_MNEMONIC is not set; run `pnpm wallet:init`')
     this.name = 'WalletNotInitializedError'
   }
 }
@@ -41,8 +41,8 @@ export class InvalidMnemonicError extends Error {
 /**
  * 🔴 There is no private-key PROPERTY here, and that is the point.
  *
- * An earlier review asked for a raw hex key-material pattern in
- * `utils/redact.ts`. Measuring first said not to add one:
+ * A raw hex key-material pattern in `utils/redact.ts` looks like the obvious
+ * guard. Measuring first said not to add one:
  *
  *   - Nothing in this worker turns key material into hex. `getHdKey`,
  *     `privateKey`, `toHex` and `bytesToHex` appear zero times outside tests
@@ -57,8 +57,8 @@ export class InvalidMnemonicError extends Error {
  * The real gap was that `seed` was a readable property whose only production
  * reader was `.address` -- one careless spread away from a payload, with no
  * barrier and no test saying so. A property that must never be read is an
- * enumeration of places not to read it, and this PR has already paid four
- * times for guards shaped like that (see lib/networks.ts). So the key is
+ * enumeration of places not to read it, and this package has already paid
+ * four times for guards shaped like that (see lib/networks.ts). So the key is
  * captured in a closure: there is nothing to spread, nothing to log, and
  * nothing for a pattern to have to recognise.
  */

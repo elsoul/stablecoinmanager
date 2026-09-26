@@ -88,9 +88,9 @@ export async function plan(env: Env, args: PlanArgs): Promise<ToolResult> {
         // code that answers a bridge request consulted the SDK, and nothing
         // applied `allowedNetworks` to it at all. So `plan` advertised routes
         // that `bridge` refused -- the caller was told to do a thing and then
-        // told it was not allowed, with no way to reconcile the two
-        //. The same defect class as the curation
-        // docblock that declared a rule the implementation did not have.
+        // told it was not allowed, with no way to reconcile the two. The same
+        // defect class as the curation docblock that declared a rule the
+        // implementation did not have.
         //
         // `routes` and `elsewhere` are separate keys on purpose: an earlier
         // version put the available list under `supported` and then spread

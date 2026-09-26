@@ -18,7 +18,7 @@ const POLL_INTERVAL_MS = 5_000
 /**
  * Buy ERPC credit with the wallet.
  *
- * Mirrors the proven flow in `api/erpc/x402-rpc-api/.e2e-local/run-e2e-topup.mjs`:
+ * Follows ERPC's x402 top-up flow, step for step:
  *
  *   1. POST /v1/account/mint with the ERPC api-key  -> a short-lived billing JWT
  *   2. POST /v1/credits/topup {amountCredits}       -> 402
@@ -59,22 +59,23 @@ export async function erpcTopup(env: Env, args: TopupArgs): Promise<ToolResult> 
   const bearer = `Bearer ${session.access_token}`
 
   // EURC only, regardless of what the policy allows for generic payments.
-  // See lib/assets.ts:topupAssetPreferences -- the ruling lives in
+  // See lib/assets.ts:topupAssetPreferences -- the rule lives in
   // constants/base.ts, not here.
   //
   // 🔴 This is the SECOND policy read of a top-up: x402Pay reads again, and
   // the ledger composes a third time inside the reservation. The duplication
-  // was raised as waste and is kept deliberately --
-  // re-reading is what makes the ledger's copy fresh, which fixes the
-  // stale-policy shape an earlier version had.
+  // was raised as waste and is kept deliberately -- re-reading is what makes
+  // the ledger's copy fresh, which fixes the stale-policy shape an earlier
+  // version had.
   //
   // 🔴 Precisely: the preferences derived here ARE handed down, as
   // `assetPreferences` to x402Pay, so "nothing downstream trusts it" -- an
-  // earlier wording of this comment -- was looser than the code. What is not trusted downstream is this read as a CEILING:
-  // x402Pay reads the policy again for its own check, and the ledger composes
-  // it a third time inside the reservation turn. The preferences only order
-  // which payable requirement is chosen, and every ceiling that decision has
-  // to clear is re-derived after it.
+  // earlier wording of this comment -- was looser than the code. What is not
+  // trusted downstream is this read as a CEILING: x402Pay reads the policy
+  // again for its own check, and the ledger composes it a third time inside
+  // the reservation turn. The preferences only order which payable
+  // requirement is chosen, and every ceiling that decision has to clear is
+  // re-derived after it.
   const preferences = topupAssetPreferences((await effectivePolicy(env)).effective)
   if (preferences.length === 0) {
     return fail({}, [

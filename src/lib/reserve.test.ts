@@ -250,7 +250,7 @@ test('refuseEverything refuses a payment the shipped ceiling allows', () => {
   // executable control: replacing its body with a fully permissive policy
   // left 240 pass / 0 fail. The only guard was a source pin asserting the
   // CALL still exists, which sees deletion and not neutering -- the exact
-  // subject this PR's own commit message claimed to be closing.
+  // gap that pin was added to close.
   //
   // The import was already here and never called. That is what an
   // un-landed test looks like from the outside.
@@ -391,8 +391,9 @@ test('🔴 the shipped [vars] are identical to the built-in defaults', () => {
 })
 
 test('loadPolicy defaults on ABSENT and throws on PRESENT-BUT-UNUSABLE', () => {
-  // The distinction B-2 turned on, driven so the docblocks above cannot drift
-  // from it again.
+  // The distinction the reservation's fail-closed exit rests on -- an absent
+  // var falls back to its default, a present but unusable one throws --
+  // driven so the docblocks above cannot drift from it again.
   assert.doesNotThrow(() => loadPolicy({} as never), 'absent vars must not throw')
   for (const bad of ['NaN', 'Infinity', '1e999', '', '   ', '0', '-1']) {
     assert.throws(

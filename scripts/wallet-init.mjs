@@ -15,8 +15,8 @@
  * mnemonic of a funded wallet would strand every asset in it.
  *
  * Usage:
- *   pnpm -F mcp-stablecoin-manager wallet:init            # production
- *   pnpm -F mcp-stablecoin-manager wallet:init -- --dry-run
+ *   pnpm wallet:init              # production
+ *   pnpm wallet:init --dry-run
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { generateMnemonic } from '@scure/bip39'
@@ -74,7 +74,7 @@ const mnemonic = generateMnemonic(wordlist, 256)
 
 // Derived only so the operator knows where to send money. Deriving the Solana
 // side here would pull the whole keyring into a script whose single job is to
-// pipe a secret, so the EVM address (the one the canary funds) is enough --
+// pipe a secret, so the EVM address (the one you fund first) is enough --
 // `wallet_status` reports both once the worker is up.
 const evm = mnemonicToAccount(mnemonic, { path: "m/44'/60'/0'/0/0" }).address
 
@@ -99,6 +99,6 @@ child.on('close', (code) => {
     '\nNext:\n' +
       '  1. Deploy, then call wallet_status over MCP to see both addresses.\n' +
       '  2. Take a backup with wallet_export_seed and store it offline.\n' +
-      '  3. Fund the EVM address with EURC on Base to run the top-up canary.',
+      '  3. Fund the EVM address with EURC on Base, then try a first small top-up.',
   )
 })

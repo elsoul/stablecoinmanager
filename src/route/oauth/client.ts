@@ -1,7 +1,5 @@
-// Copied from `api/mcp/master-api/src/route/oauth/client.ts` (only the doc
-// comment on isAllowedRedirectUri reworded). The redirect_uri allowlist is
-// deliberately identical, so a widening in either worker is visible as a diff
-// against the other.
+// Registered OAuth client records and the redirect_uri allowlist that decides
+// who can be handed an authorization code for this wallet.
 const CLAUDE_HOSTED_CALLBACK = 'https://claude.ai/api/mcp/auth_callback'
 const CHATGPT_CONNECTOR_HOST = 'chatgpt.com'
 const CHATGPT_CONNECTOR_PATH_PREFIX = '/connector/oauth/'

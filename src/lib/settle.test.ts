@@ -5,10 +5,11 @@ import { ACCEPTED_STATUSES, settleOutcome } from './settle.ts'
 // ---------------------------------------------------------------------------
 // Executed over the input space, not pinned as text.
 //
-// The same fail-open was re-introduced three times (B-2, C-1, O-3),
-// each in a shape the previous pin did not cover, because the decision was
-// inline in a module node cannot load. Here it is arithmetic on three inputs
-// and the whole grid is checked.
+// The same fail-open -- a transaction hash deciding acceptance -- was
+// re-introduced three times, each in a shape the previous pin did not cover
+// (see lib/settle.ts), because the decision was inline in a module node
+// cannot load. Here it is arithmetic on three inputs and the whole grid is
+// checked.
 // ---------------------------------------------------------------------------
 
 const STATUSES = [200, 201, 202, 204, 400, 402, 404, 409, 422, 500, 502]
@@ -34,9 +35,9 @@ test('🔴 a hash NEVER decides acceptance, at any status or body', () => {
 test('acceptance is exactly the three rail statuses', () => {
   // 🔴 The expectation is written out, NOT derived from ACCEPTED_STATUSES.
   // Deriving it made both sides move together: removing 409 from the constant
-  // left this green while the behaviour changed from accepted to refused
-  //. A test whose expectation is computed from the
-  // thing under test cannot disagree with it.
+  // left this green while the behaviour changed from accepted to refused. A
+  // test whose expectation is computed from the thing under test cannot
+  // disagree with it.
   const ACCEPTED = new Set([200, 202, 409])
   for (const httpStatus of STATUSES) {
     for (const txHash of HASHES) {
