@@ -1,0 +1,13 @@
+Copyright ELSOUL LABO B.V. All rights reserved.
+
+This notice applies only to assets/stablecoin-manager-hero.png, ERPC brand
+material containing the ERPC name and logo and the artwork that goes with them.
+
+You may display it, unmodified, as part of this repository and of copies
+of it that keep this notice. Any other use, including use in another
+project or product, needs the written permission of ELSOUL LABO B.V.
+
+The logos of blockchain and token projects shown in this material belong
+to those projects. No right to them is granted here.
+
+This notice does not assign a software license to the rest of the repository.

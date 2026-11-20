@@ -1,42 +1,94 @@
 # StableCoinManager by ERPC
 
-An MCP server that manages stablecoin payments for AI agents: it reads a service's x402 payment requirements, swaps whatever the agent's wallet holds into the required stablecoin on Uniswap, bridges when the funds sit on another network, pays, and keeps receipts and spending limits — all over the RPC line via erpc-sdk.
+**Experimental · GitHub preview**
 
-ETHGlobal Tokyo 2026 · Continuity Track. ERPC (erpc.global, AS200261), erpc-sdk and ERPC's x402 storefront are the existing project. The MCP server is the new work: the scaffold, OAuth 2.1 login, x402 payment path, policy and ledger layer, and swap/bridge route resolution were built in the week before the event (September 21–24) in our monorepo; this repository's history replays those pull requests. Since hacking began (September 25, 21:00 JST) we added the login path through our central OIDC broker, this standalone repository as an erpc-cli template, the Uniswap developer feedback, Base and EVM balances in `holdings` via erpc-sdk 0.9.0, and the first real payment from a production deployment (see "What has and has not been exercised"). Swap and bridge execution is implemented and tested but not wired to broadcast.
+[![Stablecoin Manager — Agents can pay. You set the limits.](assets/stablecoin-manager-hero.png)][stablecoin-manager-home]
 
-**An AI agent that can pay for things on its own, with spending limits it cannot argue its way past.**
+A wallet-enabled MCP server for developers exploring stablecoin payment agents.
+Inspect x402 payment requirements, read wallet holdings, apply payment policies,
+and keep receipts in a Cloudflare Worker.
 
-StableCoinManager is an MCP server running in a Cloudflare Worker that holds a
-stablecoin wallet. Log in with Google from any MCP client (Claude, Codex, or
-anything else that speaks MCP), and the agent can read an x402
-`402 Payment Required` challenge, pay it with `@x402/core` / `@x402/evm`, and
-keep the receipt.
+## Project status
 
-Giving an agent a wallet is easy. The hard part is making sure a confused or
-prompt-injected model cannot empty it. This worker does not rely on the
-prompt to prevent that. It relies on **ceilings enforced in code**, and a
-request that goes over one is refused.
+This repository is an implementation snapshot for developer evaluation. Its
+deployment and login integrations need updating and end-to-end validation before
+a new deployment can be presented as ready for general use.
 
-- **x402 payments with no gas token needed.** The worker signs an EIP-3009
-  `transferWithAuthorization` and the x402 facilitator submits it, so the
-  wallet needs no ETH. A production deployment of this worker has paid one
-  1.21 EURC invoice on Base mainnet this way (see "What has and has not been
-  exercised").
-- **Limits the agent cannot raise.** Per-payment and daily limits come from
-  the deploy config. At runtime the agent can only *lower* them. Raising a
-  limit means a redeploy.
-- **Fails closed.** A non-numeric amount, a broken config value or an
-  unreadable spend total leads to a refusal, never to "no limit".
-- **Retries never pay twice.** Every money tool requires an `idempotencyKey`.
-  Sending the same key again returns the first receipt and signs nothing.
-- **It signs only the requirement it checked.** A malicious 402 cannot pass the
-  checks with one payment option and get a different one signed.
+| Capability | Implemented scope | Verification and limits |
+| --- | --- | --- |
+| x402 payments | Base EURC and USDC candidates, with policy checks, reservations and receipts | One Base EURC payment is recorded from 2026-09-26. USDC has not been exercised end to end from this worker. |
+| Wallet holdings | SOL on Solana; native ETH/AVAX plus EURC and USDC on Ethereum, Base and Avalanche C-Chain | Requires an ERPC API key. Solana SPL token balances are not read. |
+| Payment policy | Per-payment and daily ceilings, plus configured network, asset and payee restrictions | Runtime overrides can be changed within the deployment ceilings, including restoring a previously lowered value. |
+| Swap and bridge tools | Route and capability information with constraint checks | The MCP tools do not sign or broadcast swaps or bridges. Base route planning remains unsupported. |
+| Recovery phrase export | Authenticated `wallet_export_seed` tool, with a confirmation string, throttling and an audit record | It returns wallet control to the requesting client. Payment-tool limits do not constrain someone who holds that phrase. |
 
-One deployment = one wallet = one human. That is a deliberate design choice.
+The artwork describes the payment implementation in this repository. It is
+not a claim that a hosted service, a new deployment or every listed asset has
+been validated for live use.
+
+### Integration work still needed
+
+- **Refresh installation and login.** The template requires CLI `0.2.3` and
+  the legacy `erpc app init` / `erpc deploy` flow. The current Rust ERPC CLI
+  has a different command surface; its worker commands are not a verified
+  replacement for this Cloudflare template flow. Compare the
+  [template contract](erpc-template.json) with the
+  [current CLI commands](https://github.com/elsoul/erpc-cli/blob/b178432a85b91a31873f44a7aff317ef8cb6c3ac/crates/erpc/src/main.rs).
+  The broker registration and
+  login path also need current end-to-end validation.
+- **Separate recovery access from agent payment access.** A confirmation string
+  supplied by an MCP caller is not an independent human approval. Review this
+  boundary before considering a funded deployment.
+- **Revalidate the payment service integration.** The recorded EURC top-up is
+  historical. Current top-up availability and a fresh deployment's payment and
+  receipt flow have not been revalidated for this preview.
+- **Refresh capability messages.** `holdings` reads Base in this snapshot,
+  while `plan` still carries an older Base/W1 explanation. Base route planning
+  remains unsupported; the capability message needs correction.
+- **Align releases and verification.** This `main` snapshot uses ERPC SDK
+  `0.9.0`; the existing [`v0.1.0` release](https://github.com/elsoul/stablecoinmanager/releases/tag/v0.1.0)
+  uses `0.8.1`. Test sources are included, but this repository has no checked-in
+  CI workflow. The README update does not constitute a fresh runtime test.
+
+Status checked against the 2026-09-26 implementation on 2026-11-20.
+See [the payment record](#what-has-and-has-not-been-exercised),
+[the asset catalog](src/lib/assets.ts), [policy overrides](src/lib/policyOverride.ts)
+and [the tool definitions](src/route/mcp/toolsList.ts).
+
+## Explore locally
+
+Use Node.js **24.14.1 or later** and pnpm **10**. Start by inspecting the
+implementation and running the repository's checks:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm check
+pnpm test
+```
+
+The [local development notes](#local-development) describe the local Worker.
+A local health response does not verify an external login or payment flow.
+
+## Project history
+
+ETHGlobal Tokyo 2026 · Continuity Track. The initial MCP server, OAuth login,
+x402 payment path, policy and ledger layer, and route-resolution work were
+developed in September 2026. This standalone repository preserves that work.
+The subsequent SDK 0.9.0 integration added Base and EVM holdings reads; the
+recorded production payment is described below. Swap and bridge MCP tools
+remain limited to route information without signing or broadcasting.
+
+One deployment = one wallet = one human.
 
 ---
 
 ## The guardrails
+
+These checks govern the payment-tool path. This public implementation also
+exposes `wallet_export_seed` to authenticated MCP clients. Its confirmation
+string, throttle and audit trail do not create a separate human-approval
+boundary. A holder of the recovery phrase can sign outside this worker's
+payment policy; the policy is not a complete boundary around wallet access.
 
 ### Ceilings, not prompts
 
@@ -47,20 +99,26 @@ defaults (`wrangler.toml` `[vars]`, identical to the built-in defaults in
 
 | ceiling | default | can `policy_set` change it at runtime? |
 |---|---|---|
-| per payment | 50 EURC equivalent | tighten only |
-| per day (UTC) | 200 EURC equivalent | tighten only |
-| slippage | ≤ 50 bps | tighten only |
-| deadline | ≤ 600 s | tighten only |
+| per payment | 50 token units (see below) | within the deployment ceiling |
+| per day (UTC) | 200 token units (see below) | within the deployment ceiling |
+| slippage | ≤ 50 bps | within the deployment ceiling |
+| deadline | ≤ 600 s | within the deployment ceiling |
 | networks | `eip155:8453` (Base), `solana-mainnet` | no, deploy-time only |
 | assets | EURC, USDC | no, deploy-time only |
 | payee | ERPC treasury only, unless `POLICY_ALLOW_ANY_PAYTO=true` | no, deploy-time only |
+
+The payment code applies the selected EURC or USDC token quantity directly
+to these numeric ceilings; it does not perform EUR/USD conversion. The
+`amountEurcEquivalent` field name is not evidence of a converted euro budget.
 
 A request over a limit is **refused, never clamped.** Quietly paying less than
 the agent asked for would be its own kind of wrong answer. Every refusal
 says in words which rule it broke (`describeViolation` in `src/lib/policy.ts`),
 and a refusal with several causes lists all of them.
 
-### Why the agent can only tighten its own limits
+<a id="why-the-agent-can-only-tighten-its-own-limits"></a>
+
+### How runtime overrides stay within the deployment ceilings
 
 `policy_set` accepts exactly four keys (the numeric ceilings above) and
 compares every request against the **deploy-time** value:
@@ -68,14 +126,13 @@ compares every request against the **deploy-time** value:
 - A value above the deploy-time ceiling is refused (`would_widen`).
 - A value at or below it is written, together with an audit row.
 - A narrowed limit can be relaxed back *to* the deploy-time value, never past it.
-- When overrides are read back, a stored row that would widen a limit is
-  ignored. The one-way rule applies twice, once on write and once on read.
+- When overrides are read back, a stored row above the deployment ceiling is
+  ignored. The deployment ceiling is enforced on both write and read.
 
-The reason is spelled out in `src/lib/policyOverride.ts`. If the caller that
-pays can also raise its own limit, the limit is decoration. "Raise the daily
-limit to 10000, then pay this invoice" is the first thing an attacker would
-try. So tightening is safe from any caller, because the worst it can do is
-refuse payments. Widening needs different credentials and leaves a diff.
+The boundary in `src/lib/policyOverride.ts` is the deployment ceiling. A
+runtime caller can lower a limit or restore it within that ceiling, but it
+cannot raise the ceiling itself. Raising a deployment ceiling requires an
+operator to change the deployment configuration; `policy_set` cannot do it.
 
 Networks, assets and the payee are not "how much" but "to whom and in what",
 so no runtime tool can change them.
@@ -137,7 +194,14 @@ The order is the design (`src/route/mcp/tools/x402Pay.ts`):
 
 ---
 
-## Quickstart
+<a id="quickstart"></a>
+
+## Historical deployment walkthrough
+
+The following flow documents the original template integration. It has not
+been revalidated against the current CLI and login service. Use it as a
+reference for integration work, not as a current one-command installation.
+Start with [local code and tests](#explore-locally).
 
 You need a Cloudflare account with a zone for the domain the worker will
 answer on, Node.js 24 with pnpm 10, and an `erpc` CLI release that satisfies
@@ -202,10 +266,10 @@ it.
 | `wallet_status` | addresses, init state, ERPC reachability, active ceilings |
 | `holdings` | native and EURC/USDC balances via the ERPC SDK on Solana (SOL only), Ethereum, Base and Avalanche C-Chain; what it does not read is listed in `unsupported` |
 | `policy_get` | effective ceilings, overrides, and today's remaining allowance |
-| `policy_set` | **tighten** one numeric ceiling, with an audit row |
+| `policy_set` | change one numeric override within its deployment ceiling, with an audit row |
 | `x402_inspect` | read a 402 without paying |
 | `x402_pay` | pay a 402: policy → reserve → sign → record |
-| `erpc_topup` | buy ERPC credit by paying its 402 (EURC only), then poll for the grant |
+| `erpc_topup` | historical ERPC credit top-up integration (EURC only); current service compatibility has not been revalidated |
 | `history` | recent payments, newest first |
 | `receipt` | one payment, by `idempotencyKey` |
 | `plan` | which swaps and bridges are possible today, and what blocks the rest |
@@ -213,8 +277,10 @@ it.
 | `bridge` | check a bridge route (does **not** sign or broadcast) |
 | `wallet_export_seed` | reveal the recovery phrase (needs `confirm:"EXPORT"`, audited, rate limited) |
 
-The worker signs only x402 requirements on EVM networks (`eip155:*`) using the
-`exact` scheme. Others are reported as unpayable (`src/lib/x402.ts`).
+The signing code supports the EVM `exact` scheme. The payment candidate
+catalog in this repository is restricted to EURC and USDC on Base
+(`src/lib/assets.ts`); an EVM scheme check alone does not add other payment
+networks.
 
 ---
 
@@ -233,8 +299,9 @@ That is one payment on one rail (x402 EURC on Base). The wallet's balance was
 confirmed from outside the worker, which could not read Base balances before
 `@elsoul/erpc-sdk` 0.9.0; `holdings` now reads them itself (see "Chain access"
 below). `swap` and `bridge` still stop before signing: no live swap or bridge
-has been executed. Before trusting your own deploy with real funds, make one
-small payment with it and check the result on-chain.
+has been executed. This record does not establish that the historical top-up or onboarding
+integration still works today. Resolve the integration and recovery-access
+limitations in [Project status](#project-status) before evaluating live payments.
 
 ---
 
@@ -251,17 +318,15 @@ resolves the row, including the one that throws.
 |---|---|---|
 | `pending` | reserved, or paid and the grant has not landed yet | yes |
 | `settled` | the resource granted | yes |
-| `stuck` | signed and sent, outcome unknown -- the response was lost, the resource reported stuck, or it answered with an error **and a transaction hash** | **yes** |
-| `failed` | nothing was signed, or the resource answered with no transaction hash at all | no |
+| `stuck` | signed and sent, outcome uncertain, including an unsuccessful response other than a fresh HTTP 402 | **yes** |
+| `failed` | nothing was signed, or the resource explicitly asked for payment again with HTTP 402 | no |
 
-The line between `stuck` and `failed` is **the transaction hash, not the
-status code**. A returned hash is evidence that a transaction exists,
-whatever the status code says, so a 500 carrying a hash is `stuck`. Counting
-`stuck` is deliberate. It is written exactly when the money has most likely
-moved and the worker cannot confirm it. Excluding it would let repeated stuck
-payments spend past the ceiling, which would make the ceiling fail open in the
-one case where something has already gone wrong. `settled` is terminal. A late
-poll cannot reopen a completed payment.
+After a signed payment has been sent, `settleOutcome` treats a fresh HTTP 402
+as a refusal and records `failed`. Other unsuccessful or uncertain responses
+are `stuck`, even without a transaction hash. A hash improves the receipt but
+is not required for an accepted response. Pending and uncertain payments
+continue to count toward the daily ceiling. `settled` is terminal; a late poll
+cannot reopen a completed payment. See [the settlement rules](src/lib/settle.ts).
 
 ---
 
@@ -412,8 +477,8 @@ re-derived per request and never logged or returned, with one deliberate
 exception: `wallet_export_seed`. It requires `confirm:"EXPORT"`, writes an
 audit row, and is rate limited, with the limit claimed inside the Durable
 Object so concurrent calls cannot both pass it. The exception exists because
-a wallet whose only copy lives in a Durable Object would be destroyed along
-with a deleted namespace. It is not the only way the phrase can leave: anyone
+the owner needs an independent offline backup. The phrase is a Worker secret,
+not ledger state; deleting the ledger alone does not delete the phrase. It is not the only way the phrase can leave: anyone
 who can deploy code to this worker can read the secret.
 
 The derivation code lives in `src/wallet/`: `slip10.ts` derives the ed25519
@@ -457,6 +522,10 @@ route planning on Base (W2) are still unsupported (`plan` answers
 
 ### Deploying
 
+This section records the original deployment mechanics. The current CLI and
+broker registration path need integration work and validation; see
+[Project status](#project-status) before attempting a new deployment.
+
 The checked-in `wrangler.toml` is a template. `erpc app init` fills in its
 quoted `{{...}}` placeholders from your answers (and from the broker, for
 `APP_OIDC_CLIENT_ID`); `erpc deploy --target cloudflare` then does the rest,
@@ -473,7 +542,7 @@ The secrets are created once and never overwritten by a later deploy:
 |---|---|
 | `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `OAUTH_STATE_SECRET` | 32 random bytes each, generated by the CLI |
 | `WALLET_MNEMONIC` | `scripts/wallet-generate.mjs`, piped straight into `wrangler secret put` |
-| `ERPC_API_KEY` | optional; asked for (or read from the `ERPC_API_KEY` environment variable). Only `erpc_topup` needs it |
+| `ERPC_API_KEY` | required for holdings and RPC reachability, as well as the ERPC top-up integration. The historical template's optional prompt does not reflect these read-path requirements |
 
 `scripts/wallet-generate.mjs` writes the 24-word phrase to stdout and only
 the EVM address to stderr. It never writes the phrase to a file or to argv.
@@ -519,7 +588,7 @@ Everything above can be done by hand from a clone:
    pnpm exec wrangler secret put JWT_SECRET
    pnpm exec wrangler secret put REFRESH_TOKEN_SECRET
    pnpm exec wrangler secret put OAUTH_STATE_SECRET
-   pnpm exec wrangler secret put ERPC_API_KEY   # optional
+   pnpm exec wrangler secret put ERPC_API_KEY   # required for holdings and RPC reachability
    pnpm wallet:init     # generates and pipes the mnemonic
    ```
 
@@ -646,6 +715,18 @@ keeps an authorization code from being delivered to a host you do not own.
 
 - x402 の 402 を読んで EIP-3009 署名で支払う、ウォレット内蔵の MCP サーバー（Cloudflare Worker）。Google ログイン・1 デプロイ = 1 ウォレット = 1 人。
 - AI の使いすぎは prompt ではなくコードの上限で止める: 1 回・1 日・slippage・deadline の上限を超えた要求は拒否し、減額して払うことはしない。
-- `policy_set` は上限を**下げることしかできない**。上げるには再デプロイが要る。network・asset・支払先は実行時に変更できない。
+- 公開版の `policy_set` はデプロイ時の上限内で変更でき、下げた値をその上限まで戻すこともできる。デプロイ時の上限を超える変更には再デプロイが必要。network・asset・支払先は実行時に変更できない。
 - 値が読めない・数値でないときは常に拒否側に倒れる（fail-closed）。`idempotencyKey` で二重払いを防ぎ、署名するのは検査を通った要求だけ。
-- 本番デプロイから 1.21 EURC の支払いを 1 回実施済み（Base tx `0xcd5cad57…acdc2964`・2026-09-26）。swap / bridge は署名前で止まる。実資金を入れる前に、自分のデプロイで少額の支払いを 1 回試して on-chain で確かめること。
+- 2026-09-26に本番デプロイから1.21 EURCを支払った過去の記録がある（Base tx `0xcd5cad57…acdc2964`）。USDCはend-to-end未検証。swap / bridgeは経路確認までで、署名・broadcastしない。
+- この公開リポジトリは開発者向けの実験的な実装記録。現在のCLI・ログイン・top-upとの接続は再検証が必要で、すぐに導入できる完成品として案内していない。
+- 残高確認・RPC到達性確認にも `ERPC_API_KEY` が必要。`wallet_export_seed` は認証済みMCPクライアントへ回復フレーズを返せるため、支払いtoolの上限だけでウォレット全体の安全を保証するものではない。
+
+## Brand artwork
+
+The key visual is ERPC brand material. Its terms are recorded in
+[the artwork notice](LICENSES/LicenseRef-ELSOUL-LABO-Brand.txt). Blockchain
+and token logos belong to their respective projects. This artwork notice
+does not assign a software license to the rest of the repository.
+
+[stablecoin-manager-home]: https://github.com/elsoul/stablecoinmanager
+
