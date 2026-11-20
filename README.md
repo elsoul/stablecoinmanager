@@ -126,14 +126,13 @@ compares every request against the **deploy-time** value:
 - A value above the deploy-time ceiling is refused (`would_widen`).
 - A value at or below it is written, together with an audit row.
 - A narrowed limit can be relaxed back *to* the deploy-time value, never past it.
-- When overrides are read back, a stored row that would widen a limit is
-  ignored. The one-way rule applies twice, once on write and once on read.
+- When overrides are read back, a stored row above the deployment ceiling is
+  ignored. The deployment ceiling is enforced on both write and read.
 
-The reason is spelled out in `src/lib/policyOverride.ts`. If the caller that
-pays can also raise its own limit, the limit is decoration. "Raise the daily
-limit to 10000, then pay this invoice" is the first thing an attacker would
-try. So tightening is safe from any caller, because the worst it can do is
-refuse payments. Widening needs different credentials and leaves a diff.
+The boundary in `src/lib/policyOverride.ts` is the deployment ceiling. A
+runtime caller can lower a limit or restore it within that ceiling, but it
+cannot raise the ceiling itself. Raising a deployment ceiling requires an
+operator to change the deployment configuration; `policy_set` cannot do it.
 
 Networks, assets and the payee are not "how much" but "to whom and in what",
 so no runtime tool can change them.
@@ -730,3 +729,4 @@ and token logos belong to their respective projects. This artwork notice
 does not assign a software license to the rest of the repository.
 
 [stablecoin-manager-home]: https://github.com/elsoul/stablecoinmanager
+
